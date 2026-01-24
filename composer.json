@@ -1,0 +1,20 @@
+{
+    "name": "bitsnio/asasflow",
+    "description": "Laravel Framework to Generate modular api flows",
+    "type": "library",
+    "license": "MIT",
+    "autoload": {
+        "psr-4": {
+            "Bitsnio\\AsasFlow\\": "src/"
+        }
+    },
+    "authors": [
+        {
+            "name": "Muhammad Haseeb Khan"
+        }
+    ],
+    "minimum-stability": "dev",
+    "require": {
+        "illuminate/support": "12.x-dev"
+    }
+}

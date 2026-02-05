@@ -15,6 +15,7 @@
     ],
     "minimum-stability": "dev",
     "require": {
-        "illuminate/support": "12.x-dev"
+        "php": "8.2.* | 8.3.*",
+        "illuminate/support": "13.0.x-dev"
     }
 }

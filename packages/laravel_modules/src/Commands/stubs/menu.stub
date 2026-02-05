@@ -1,0 +1,40 @@
+<?php
+// stubs/menu.stub
+return [
+    'module' => [
+        'name' => '$STUDLY_NAME$',
+        'title' => '$MODULE_NAME$',
+        'icon' => 'fas fa-cube',
+        'order' => 1,
+        'routes_type' => '',
+        'hidden'=>false,
+        'model'=>false,
+        'schema'=>true,
+        'sub_module' => [
+            [
+                'name' => '$STUDLY_NAME$',
+                'title' => '$MODULE_NAME$',
+                'routes_type' => 'full',
+                'icon' => 'fas fa-list',
+                'middleware' => ['api', 'auth'],
+                'order' => 1,
+                'hidden'=>false,
+                'model'=>true,
+                'schema'=>true,
+                'actions'=>[
+                    [
+                    'name' => '$STUDLY_NAME$',
+                    'title' => '$MODULE_NAME$',
+                    'routes_type' => 'single',
+                    'icon' => 'fas fa-list',
+                    'middleware' => ['api', 'auth'],
+                    'order' => 1,
+                    'hidden'=>false,
+                    'model'=>true,
+                    'schema'=>true
+                    ]
+                ]
+            ]
+        ]
+    ]
+];

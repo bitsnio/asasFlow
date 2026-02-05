@@ -1,0 +1,56 @@
+<?php
+
+namespace $NAMESPACE$;
+
+use Spatie\LaravelSettings\Settings;
+
+class $CLASS$ extends Settings
+{
+    // Define your settings properties here
+  
+    public array $module_settings;
+    public array $user_meta;
+    
+    public static function group(): string
+    {
+        return '$LOWER_MODULE$';
+    }
+
+    public static function encrypted(): array
+    {
+        return [
+            // Add properties that should be encrypted
+            // 'api_key',
+        ];
+    }
+
+    public static function casts(): array
+    {
+        return [
+            'module_settings' => 'array',
+            'user_meta' => 'array',
+        ];
+    }
+
+    /**
+     * Get default values for settings
+     */
+    public static function defaults(): array
+    {
+        return [
+            'module_settings' => [],
+            'user_meta' => [],
+        ];
+    }
+
+    /**
+     * Validation rules for settings
+     */
+    public static function rules(): array
+    {
+        return [
+            'module_settings' => ['array'],
+            'user_meta' => ['array'],
+        ];
+    }
+}

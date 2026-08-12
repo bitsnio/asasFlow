@@ -1,18 +1,39 @@
 <?php
+
 namespace Bitsnio\AsasFlow;
 
 use Illuminate\Support\ServiceProvider;
+use Bitsnio\AsasFlow\Console\Commands\Install;
 
-abstract class AsasFlowServiceProvider extends ServiceProvider
+class AsasFlowServiceProvider extends ServiceProvider
 {
     public function register()
     {
-        // Register config or singletons
+        $this->mergeConfigFrom(__DIR__ . '/../config/asasflow.php', 'asasflow');
+
+        $this->app->register(\Bitsnio\Modules\LaravelModulesServiceProvider::class);
+
+
+        $this->app->booting(function () {
+            if (config('asasflow.routes.enabled') === true) {
+                $this->loadRoutesFrom(__DIR__ . '/../routes/docs.php');
+            }
+        });
     }
 
     public function boot()
     {
-        // Load routes, views, or migrations
-        // $this->loadViewsFrom(__DIR__.'/../resources/views', 'asasflow');
+        // Publishing + commands (console only)
+        if ($this->app->runningInConsole()) {
+
+            $this->publishes([
+                __DIR__ . '/../config/asasflow.php' => \config_path('asasflow.php'),
+            ], 'asasflow-config');
+
+            $this->commands(
+                \Bitsnio\AsasFlow\Console\ConsoleServiceProvider::commands()->toArray()
+            );
+        }
+
     }
 }

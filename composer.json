@@ -1,21 +1,40 @@
 {
-    "name": "bitsnio/asasflow",
-    "description": "Laravel Framework to Generate modular api flows",
-    "type": "library",
-    "license": "MIT",
-    "autoload": {
-        "psr-4": {
-            "Bitsnio\\AsasFlow\\": "src/"
-        }
+  "name": "bitsnio/asasflow",
+  "description": "Laravel Framework to Generate modular api flows",
+  "type": "library",
+  "license": "MIT",
+  "autoload": {
+    "psr-4": {
+      "Bitsnio\\AsasFlow\\": "src/",
+      "Bitsnio\\Modules\\": "packages/laravel-modules/src/"
     },
-    "authors": [
-        {
-            "name": "Muhammad Haseeb Khan"
-        }
-    ],
-    "minimum-stability": "dev",
-    "require": {
-        "php": "8.2.* | 8.3.*",
-        "illuminate/support": "13.0.x-dev"
+    "files": [
+      "packages/laravel-modules/src/helpers.php"
+    ]
+  },
+  "authors": [
+    {
+      "name": "Muhammad Haseeb Khan"
     }
+  ],
+  "extra": {
+    "laravel": {
+      "providers": [
+        "Bitsnio\\AsasFlow\\AsasFlowServiceProvider"
+      ]
+    }
+  },
+  "minimum-stability": "dev",
+  "require": {
+    "php": "8.2.* | 8.3.*",
+    "illuminate/support": "^13.0",
+    "binarytorch/larecipe": "^2.9",
+    "php-open-source-saver/jwt-auth": "^2.9.0",
+    "spatie/laravel-permission": "^7.3.0",
+    "spatie/laravel-settings": "^3.7.2",
+    "wikimedia/composer-merge-plugin": "^2.1"
+  },
+  "require-dev": {
+    "laravel/framework": "^13.0"
+  }
 }

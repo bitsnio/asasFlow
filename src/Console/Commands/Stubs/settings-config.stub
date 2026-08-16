@@ -1,0 +1,53 @@
+<?php
+
+return [
+
+    /*
+    |--------------------------------------------------------------------------
+    | Settings Class
+    |--------------------------------------------------------------------------
+    */
+
+    'class' => $CLASS$::class,
+
+    /*
+    |--------------------------------------------------------------------------
+    | Settings
+    |--------------------------------------------------------------------------
+    |
+    | Every setting is defined here.
+    |
+    | The actual value is stored in:
+    |
+    |     ModuleSettings::$values
+    |
+    | This file describes the setting and tells the frontend how it
+    | should be rendered.
+    |
+    */
+
+    'settings' => [
+
+        /*
+        |--------------------------------------------------------------------------
+        | Example
+        |--------------------------------------------------------------------------
+        |
+        | 'example' => [
+        |     'label' => 'Example',
+        |     'description' => 'Example setting.',
+        |     'type' => 'string',
+        |     'input' => 'text',
+        |     'default' => '',
+        |     'options' => null,
+        |     'rules' => [
+        |         'nullable',
+        |         'string',
+        |     ],
+        | ],
+        |
+        */
+
+    ],
+
+];

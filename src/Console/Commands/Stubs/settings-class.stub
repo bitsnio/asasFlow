@@ -1,0 +1,15 @@
+<?php
+
+declare(strict_types=1);
+
+namespace $NAMESPACE$;
+
+use Bitsnio\Core\Settings\ModuleSettings;
+
+class $CLASS$ extends ModuleSettings
+{
+    public static function module(): string
+    {
+        return '$MODULE$';
+    }
+}

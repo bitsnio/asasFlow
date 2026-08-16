@@ -4,6 +4,7 @@ namespace Bitsnio\AsasFlow\Console\Commands\ModuleCommands;
 
 use Bitsnio\Modules\Commands\Make\ModuleMakeCommand as BaseModuleMakeCommand;
 use Bitsnio\AsasFlow\Generators\MenuGenerator;
+use Bitsnio\AsasFlow\Generators\ModuleSettingsGenerator;
 
 class ModuleMakeCommand extends BaseModuleMakeCommand
 {
@@ -47,6 +48,11 @@ class ModuleMakeCommand extends BaseModuleMakeCommand
             $this->components
         ))->generate();
 
+        (new ModuleSettingsGenerator(
+            $this->laravel['modules'],
+            $moduleName,
+            $this->components
+        ))->generate();
         
     }
 

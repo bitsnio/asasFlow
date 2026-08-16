@@ -86,37 +86,14 @@ class ModuleSettingsGenerator
      */
     protected function generateSettingsMigration(): void
     {
-        $directory = $this->getSettingsMigrationDirectory();
+        $path = $this->getSettingsMigrationPath();
 
-        $this->ensureDirectory($directory);
+        $this->ensureDirectory(dirname($path));
 
-        /*
-         * Don't create another migration if the generator runs
-         * again for the same module.
-         */
-        $existing = $this->filesystem->glob(
-            $directory . '/*_create_' .
-                Str::snake($this->moduleName) .
-                '_settings_defaults.php'
-        );
-
-        if (! empty($existing)) {
-            $this->component?->info(
-                'Settings migration already exists.'
-            );
-
+        if ($this->filesystem->exists($path)) {
+            $this->component?->info("Settings migration already exists: {$path}");
             return;
         }
-
-        $timestamp = now()->format('Y_m_d_His');
-
-        $filename =
-            $timestamp .
-            '_create_' .
-            Str::snake($this->moduleName) .
-            '_settings_defaults.php';
-
-        $path = $directory . '/' . $filename;
 
         $this->filesystem->put(
             $path,
@@ -370,9 +347,9 @@ PHP;
 
     protected function getStubPath(string $stubName): string
     {
-        return __DIR__ .
-            '/../../stubs/' .
-            ltrim($stubName, '/');
+        return dirname(__DIR__)
+            . '/Console/Commands/Stubs/'
+            . ltrim($stubName, '/');
     }
 
     protected function getSettingsClassPath(): string
@@ -385,11 +362,14 @@ PHP;
             '.php';
     }
 
-    protected function getSettingsMigrationDirectory(): string
+    protected function getSettingsMigrationPath(): string
     {
-        return $this->module->getModulePath(
-            $this->moduleName
-        ) . '/database/settings';
+        return $this->module->getModulePath($this->moduleName)
+            . '/database/migrations/'
+            . date('Y_m_d_His')
+            . '_create_'
+            . strtolower($this->moduleName)
+            . '_settings_defaults.php';
     }
 
     protected function getSettingsConfigPath(): string

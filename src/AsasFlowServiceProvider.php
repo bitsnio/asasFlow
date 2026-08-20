@@ -7,38 +7,21 @@ use Bitsnio\AsasFlow\Console\Commands\Install;
 use Bitsnio\AsasFlow\Core\Services\ModuleSettingsDiscovery;
 use Bitsnio\AsasFlow\Core\Services\ModuleSettingsRegistry;
 use Bitsnio\AsasFlow\Core\Services\ModuleSettingsService;
+use Bitsnio\AsasFlow\Core\Repositories\ModuleSettingsRepository;
 use Illuminate\Filesystem\Filesystem;
 
 class AsasFlowServiceProvider extends ServiceProvider
 {
-    public function register():void
+    public function register(): void
     {
 
         $this->app->singleton(
-            ModuleSettingsRegistry::class,
-            function () {
-                return new ModuleSettingsRegistry();
-            }
+            ModuleSettingsRepository::class
         );
 
         $this->app->singleton(
-            ModuleSettingsDiscovery::class,
-            function ($app) {
-                return new ModuleSettingsDiscovery(
-                    $app->make(ModuleSettingsRegistry::class),
-                    $app->make(Filesystem::class),
-                );
-            }
+            ModuleSettingsService::class
         );
-
-        $this->app->singleton(
-            ModuleSettingsService::class,
-            function ($app) {
-                return new ModuleSettingsService(
-                    $app->make(ModuleSettingsRegistry::class),
-                );
-            }
-        );  
 
         $this->app->alias(
             ModuleSettingsService::class,
@@ -82,6 +65,5 @@ class AsasFlowServiceProvider extends ServiceProvider
                 \Bitsnio\AsasFlow\Console\ConsoleServiceProvider::commands()->toArray()
             );
         }
-
     }
 }

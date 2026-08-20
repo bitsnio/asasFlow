@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Bitsnio\AsasFlow\Core\Http\Requests;
 
-use Bitsnio\AsasFlow\Core\Services\ModuleSettingsService;
 use Illuminate\Foundation\Http\FormRequest;
 
 class UpdateModuleSettingsRequest extends FormRequest
@@ -16,32 +15,21 @@ class UpdateModuleSettingsRequest extends FormRequest
 
     public function rules(): array
     {
-        /** @var ModuleSettingsService $service */
-        $service = app(ModuleSettingsService::class);
-
-        $module = (string) $this->route('module');
-
-        $definitions = $service->definitions($module);
-
-        $rules = [
-            'enabled' => [
-                'sometimes',
-                'boolean',
-            ],
-
-            'values' => [
-                'sometimes',
+        return [
+            'settings' => [
+                'required',
                 'array',
             ],
+
+            'company_id' => [
+                'nullable',
+                'integer',
+            ],
+
+            'site_id' => [
+                'nullable',
+                'integer',
+            ],
         ];
-
-        foreach ($definitions as $key => $definition) {
-            if (! empty($definition['rules'])) {
-                $rules["values.{$key}"] =
-                    $definition['rules'];
-            }
-        }
-
-        return $rules;
     }
 }

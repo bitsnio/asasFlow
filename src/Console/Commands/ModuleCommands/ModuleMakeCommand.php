@@ -3,75 +3,80 @@
 namespace Bitsnio\AsasFlow\Console\Commands\ModuleCommands;
 
 use Bitsnio\Modules\Commands\Make\ModuleMakeCommand as BaseModuleMakeCommand;
+use Bitsnio\Modules\Contracts\ActivatorInterface;
+use Bitsnio\Modules\Generators\ModuleGenerator;
 use Bitsnio\AsasFlow\Generators\MenuGenerator;
 use Bitsnio\AsasFlow\Generators\ModuleSettingsGenerator;
+use Bitsnio\AsasFlow\Console\Commands\Traits\HandlesComposerDump;
 
 class ModuleMakeCommand extends BaseModuleMakeCommand
 {
-    protected $name = 'module:make';
+    use HandlesComposerDump;
+
+    protected const FIXED_AUTHOR_VENDOR = 'yourcompany';
+    protected const FIXED_MODULE_TYPE = 'api';
+    protected const DEFAULT_AUTHOR_NAME = 'Your Company Name';
+    protected const DEFAULT_AUTHOR_EMAIL = 'dev@yourcompany.com';
 
     public function handle(): int
     {
-        $names = (array) $this->argument('name');
-        $created = []; // track successfully created modules
+        $names = $this->argument('name');
+        $success = true;
 
-        foreach ($names as $moduleName) {
-            try {
-                // 1. Run parent generation
-                $exitCode = parent::handle();
-                if ($exitCode !== 0) {
-                    throw new \RuntimeException("Module scaffolding failed for [{$moduleName}].");
-                }
-                $created[] = $moduleName;
+        $authorName = $this->option('author-name') ?: self::DEFAULT_AUTHOR_NAME;
+        $authorEmail = $this->option('author-email') ?: self::DEFAULT_AUTHOR_EMAIL;
 
-                // 2. Run your additional generators
-                $this->runPostGenerators($moduleName);
-            } catch (\Exception $e) {
-                $this->components->error($e->getMessage());
+        $this->components->info(sprintf(
+            'Creating API module(s) with Author: %s <%s>, Vendor: %s',
+            $authorName,
+            $authorEmail,
+            self::FIXED_AUTHOR_VENDOR
+        ));
 
-                // Rollback only what was successfully created
-                $this->handleRollback($created);
+        foreach ($names as $name) {
+            $code = with(new ModuleGenerator($name))
+                ->setFilesystem($this->laravel['files'])
+                ->setModule($this->laravel['modules'])
+                ->setConfig($this->laravel['config'])
+                ->setActivator($this->laravel[ActivatorInterface::class])
+                ->setConsole($this)
+                ->setComponent($this->components)
+                ->setForce($this->option('force'))
+                ->setType(self::FIXED_MODULE_TYPE)
+                ->setInertia(false)
+                ->setActive(! $this->option('disabled'))
+                ->setVendor(self::FIXED_AUTHOR_VENDOR)
+                ->setAuthor($authorName, $authorEmail)
+                ->generate();
 
-                return E_ERROR;
+            if ($code === E_ERROR) {
+                $success = false;
+                $this->components->error("Module scaffolding failed for [{$name}].");
+                break;
             }
+
+            $this->runPostGenerators($name);
         }
 
-        return 0;
+        if ($success) {
+            $this->runComposerDumpAutoload();
+        }
+
+        return $success ? 0 : E_ERROR;
     }
 
     protected function runPostGenerators(string $moduleName): void
     {
-        // Each generator throws on failure — caller handles rollback
-        (new MenuGenerator(
-            $this->laravel['modules'],
-            $moduleName,
-            $this->components
-        ))->generate();
+        try {
+            $this->components->info("Running post-generators for [{$moduleName}]...");
 
-        (new ModuleSettingsGenerator(
-            $this->laravel['modules'],
-            $moduleName,
-            $this->components
-        ))->generate();
-        
-    }
+            (new MenuGenerator($this->laravel['modules'], $moduleName, $this->components))->generate();
+            (new ModuleSettingsGenerator($this->laravel['modules'], $moduleName, $this->components))->generate();
 
-    protected function handleRollback(array $createdModules): void
-    {
-        if (empty($createdModules)) return;
-
-        $moduleList = implode(', ', $createdModules);
-
-        if ($this->confirm("Generation failed. Rollback created module(s) [{$moduleList}]?", false)) {
-            foreach ($createdModules as $moduleName) {
-                $this->call('module:delete', [
-                    'module' => [$moduleName],
-                    '--force' => true,
-                ]);
-                $this->components->warn("Rolled back: [{$moduleName}]");
-            }
-        } else {
-            $this->components->warn("Skipping rollback. Modules [{$moduleList}] may be in an incomplete state.");
+            $this->components->info("✓ Post-generators completed for [{$moduleName}].");
+        } catch (\Exception $e) {
+            $this->components->error("Post-generators failed for [{$moduleName}]: " . $e->getMessage());
+            throw $e;
         }
     }
 }

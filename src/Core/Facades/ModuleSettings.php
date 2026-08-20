@@ -7,12 +7,32 @@ namespace Bitsnio\AsasFlow\Core\Facades;
 use Illuminate\Support\Facades\Facade;
 
 /**
- * @method static array modules()
- * @method static array definitions(string $module)
- * @method static array defaults(string $module)
- * @method static array get(string $module)
- * @method static \Bitsnio\AsasFlow\Core\Settings\ModuleSettings update(string $module, array $data)
- * @method static \Bitsnio\AsasFlow\Core\Settings\ModuleSettings set(string $module, string $key, mixed $value)
+ * @method static mixed get(
+ *     string $module,
+ *     string $key,
+ *     mixed $default = null,
+ *     ?int $companyId = null,
+ *     ?int $siteId = null
+ * )
+ *
+ * @method static array all(
+ *     string $module,
+ *     ?int $companyId = null,
+ *     ?int $siteId = null
+ * )
+ *
+ * @method static array update(
+ *     string $module,
+ *     array $values,
+ *     ?int $companyId = null,
+ *     ?int $siteId = null
+ * )
+ *
+ * @method static array schema(
+ *     string $module,
+ *     ?int $companyId = null,
+ *     ?int $siteId = null
+ * )
  */
 class ModuleSettings extends Facade
 {

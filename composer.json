@@ -26,7 +26,7 @@
   },
   "minimum-stability": "dev",
   "require": {
-    "php": "8.2.* | 8.3.*",
+    "php": "8.2.* | 8.3.* | 8.4.*",
     "illuminate/support": "^13.0",
     "binarytorch/larecipe": "^2.9",
     "php-open-source-saver/jwt-auth": "^2.9.0",

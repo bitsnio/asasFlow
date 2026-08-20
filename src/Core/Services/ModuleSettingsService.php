@@ -4,233 +4,425 @@ declare(strict_types=1);
 
 namespace Bitsnio\AsasFlow\Core\Services;
 
-use Bitsnio\AsasFlow\Core\Settings\ModuleSettings;
-use Illuminate\Support\Arr;
+use Bitsnio\AsasFlow\Core\Repositories\ModuleSettingsRepository;
+use Illuminate\Support\Facades\Cache;
 use InvalidArgumentException;
 
 class ModuleSettingsService
 {
     public function __construct(
-        protected ModuleSettingsRegistry $registry,
-    ) {}
-
-    /**
-     * @return array<int, string>
-     */
-    public function modules(): array
-    {
-        return array_keys($this->registry->all());
+        protected ModuleSettingsDiscovery $discovery,
+        protected ModuleSettingsRepository $repository,
+    ) {
     }
 
-    /**
-     * @return class-string<ModuleSettings>
-     */
-    public function settingsClass(string $module): string
-    {
-        $class = $this->registry->getClass($module);
+    /*
+    |--------------------------------------------------------------------------
+    | Get one setting
+    |--------------------------------------------------------------------------
+    */
 
-        if (! $class) {
-            throw new InvalidArgumentException(
-                "No settings registered for module [{$module}]."
+    public function get(
+        string $module,
+        string $key,
+        mixed $default = null,
+        ?int $companyId = null,
+        ?int $siteId = null
+    ): mixed {
+        $settings = $this->all(
+            $module,
+            $companyId,
+            $siteId
+        );
+
+        return data_get(
+            $settings,
+            $key,
+            $default
+        );
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Get all effective settings
+    |--------------------------------------------------------------------------
+    */
+
+    public function all(
+        string $module,
+        ?int $companyId = null,
+        ?int $siteId = null
+    ): array {
+        $cacheKey = $this->cacheKey(
+            $module,
+            $companyId,
+            $siteId
+        );
+
+        return Cache::remember(
+            $cacheKey,
+            now()->addHours(24),
+            fn () => $this->resolve(
+                $module,
+                $companyId,
+                $siteId
+            )
+        );
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Resolve effective values
+    |--------------------------------------------------------------------------
+    */
+
+    protected function resolve(
+        string $module,
+        ?int $companyId,
+        ?int $siteId
+    ): array {
+        $definitions = $this->definitions($module);
+
+        $moduleValues = $this->repository->values(
+            $module
+        );
+
+        $companyValues = [];
+
+        if ($companyId !== null) {
+            $companyValues = $this->repository->values(
+                $module,
+                $companyId
             );
         }
 
-        return $class;
-    }
+        $siteValues = [];
 
-    public function settings(string $module): ModuleSettings
-    {
-        $class = $this->settingsClass($module);
-
-        /** @var ModuleSettings $settings */
-        $settings = app($class);
-
-        return $settings;
-    }
-
-    /**
-     * Get module definitions.
-     */
-    public function definitions(string $module): array
-    {
-        $class = $this->settingsClass($module);
-
-        $configPath = $this->configPath($class);
-
-        if (! is_file($configPath)) {
-            return [];
-        }
-
-        $config = require $configPath;
-
-        return $config['settings'] ?? [];
-    }
-
-    /**
-     * Get defaults defined in config/settings.php.
-     */
-    public function defaults(string $module): array
-    {
-        $definitions = $this->definitions($module);
-
-        $defaults = [];
-
-        foreach ($definitions as $key => $definition) {
-
-            if (
-                is_array($definition)
-                && array_key_exists('default', $definition)
-            ) {
-                $defaults[$key] = $definition['default'];
-            }
-        }
-
-        return $defaults;
-    }
-
-    /**
-     * Return complete frontend-friendly representation.
-     */
-    public function get(string $module): array
-    {
-        $settings = $this->settings($module);
-
-        return [
-            'module' => $module,
-            'class' => $this->settingsClass($module),
-
-            'settings' => $this->buildSettings(
+        if ($companyId !== null && $siteId !== null) {
+            $siteValues = $this->repository->values(
                 $module,
-                $settings->values
-            ),
-        ];
-    }
-
-    /**
-     * Build dynamic values response.
-     */
-    /**
-     * Build complete settings response.
-     */
-    protected function buildSettings(
-        string $module,
-        array $currentValues
-    ): array {
-        $definitions = $this->definitions($module);
+                $companyId,
+                $siteId
+            );
+        }
 
         $result = [];
 
         foreach ($definitions as $key => $definition) {
 
-            $default = $definition['default'] ?? null;
-
-            $value = array_key_exists(
+            $definition = $this->normalizeDefinition(
                 $key,
-                $currentValues
-            )
-                ? $currentValues[$key]
-                : $default;
+                $definition
+            );
 
-            $result[$key] = [
-                'key' => $key,
+            $scope = $definition['scope'];
 
-                'label' =>
-                $definition['label'] ?? $key,
+            /*
+             * Module-level:
+             *
+             * module DB override
+             * otherwise default
+             */
+            if ($scope === 'module') {
 
-                'description' =>
-                $definition['description'] ?? null,
+                $result[$key] = array_key_exists(
+                    $key,
+                    $moduleValues
+                )
+                    ? $moduleValues[$key]
+                    : $definition['default'];
 
-                'type' =>
-                $definition['type'] ?? 'string',
+                continue;
+            }
 
-                'input' =>
-                $definition['input'] ?? 'text',
+            /*
+             * Company-level:
+             *
+             * company override
+             * otherwise module override
+             * otherwise default
+             */
+            if ($scope === 'company') {
 
-                'value' => $value,
+                if (array_key_exists($key, $companyValues)) {
+                    $result[$key] = $companyValues[$key];
 
-                'default' => $default,
+                } elseif (array_key_exists($key, $moduleValues)) {
+                    $result[$key] = $moduleValues[$key];
 
-                'options' =>
-                $definition['options'] ?? null,
+                } else {
+                    $result[$key] = $definition['default'];
+                }
 
-                'rules' =>
-                $definition['rules'] ?? [],
-            ];
+                continue;
+            }
+
+            /*
+             * Site-level:
+             *
+             * site override
+             * company override
+             * module override
+             * default
+             */
+            if ($scope === 'site') {
+
+                if (array_key_exists($key, $siteValues)) {
+                    $result[$key] = $siteValues[$key];
+
+                } elseif (array_key_exists($key, $companyValues)) {
+                    $result[$key] = $companyValues[$key];
+
+                } elseif (array_key_exists($key, $moduleValues)) {
+                    $result[$key] = $moduleValues[$key];
+
+                } else {
+                    $result[$key] = $definition['default'];
+                }
+            }
         }
 
         return $result;
     }
-    /**
-     * Update module settings.
-     */
+
+    /*
+    |--------------------------------------------------------------------------
+    | Update settings
+    |--------------------------------------------------------------------------
+    */
+
     public function update(
         string $module,
-        array $data
-    ): ModuleSettings {
-        $settings = $this->settings($module);
-
+        array $values,
+        ?int $companyId = null,
+        ?int $siteId = null
+    ): array {
         $definitions = $this->definitions($module);
 
-        if (array_key_exists('values', $data)) {
+        $existing = $this->repository->values(
+            $module,
+            $companyId,
+            $siteId
+        );
 
-            $values = $data['values'];
+        foreach ($values as $key => $value) {
 
-            /*
-         * Only settings declared in config/settings.php
-         * can be updated.
-         */
-            $values = array_intersect_key(
-                $values,
-                $definitions
+            if (!array_key_exists($key, $definitions)) {
+                throw new InvalidArgumentException(
+                    "Unknown setting [{$module}.{$key}]."
+                );
+            }
+
+            $definition = $this->normalizeDefinition(
+                $key,
+                $definitions[$key]
             );
 
-            $settings->values = array_replace(
-                $settings->values,
-                $values
+            $this->ensureScopeMatches(
+                $key,
+                $definition['scope'],
+                $companyId,
+                $siteId
             );
+
+            $existing[$key] = $value;
         }
 
-        $settings->save();
-
-        return $settings;
-    }
-
-    /**
-     * Set one dynamic setting.
-     */
-    public function set(
-        string $module,
-        string $key,
-        mixed $value
-    ): ModuleSettings {
-        return $this->update(
+        $this->repository->save(
             $module,
-            [
-                'values' => [
-                    $key => $value,
-                ],
-            ]
+            $existing,
+            $companyId,
+            $siteId
+        );
+
+        $this->forget(
+            $module,
+            $companyId,
+            $siteId
+        );
+
+        return $this->all(
+            $module,
+            $companyId,
+            $siteId
         );
     }
 
-    /**
-     * Get module config file path from settings class.
-     */
-    protected function configPath(string $class): string
-    {
-        $reflection = new \ReflectionClass($class);
+    /*
+    |--------------------------------------------------------------------------
+    | Get definitions
+    |--------------------------------------------------------------------------
+    */
 
+    public function definitions(string $module): array
+    {
+        return $this->discovery->settings($module);
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Frontend-friendly response
+    |--------------------------------------------------------------------------
+    */
+
+    public function schema(
+        string $module,
+        ?int $companyId = null,
+        ?int $siteId = null
+    ): array {
+        $definitions = $this->definitions($module);
+
+        $values = $this->all(
+            $module,
+            $companyId,
+            $siteId
+        );
+
+        $result = [];
+
+        foreach ($definitions as $key => $definition) {
+
+            $definition = $this->normalizeDefinition(
+                $key,
+                $definition
+            );
+
+            $result[$key] = array_merge(
+                $definition,
+                [
+                    'key' => $key,
+                    'value' => $values[$key] ?? null,
+                ]
+            );
+        }
+
+        return $result;
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Normalize definition
+    |--------------------------------------------------------------------------
+    */
+
+    protected function normalizeDefinition(
+        string $key,
+        mixed $definition
+    ): array {
         /*
-         * Settings class:
+         * Simplest possible form:
          *
-         * Modules/Admin/Settings/AdminSettings.php
+         * 'foo' => 'bar'
          *
-         * Config:
+         * becomes:
          *
-         * Modules/Admin/config/settings.php
+         * [
+         *     'default' => 'bar',
+         *     'scope' => 'module',
+         * ]
          */
-        return dirname(
-            dirname($reflection->getFileName())
-        ) . '/config/settings.php';
+        if (!is_array($definition)) {
+            return [
+                'default' => $definition,
+                'scope' => 'module',
+            ];
+        }
+
+        return array_merge(
+            [
+                'label' => $key,
+                'description' => null,
+                'type' => null,
+                'input' => null,
+                'default' => null,
+                'options' => [],
+                'rules' => [],
+                'scope' => 'module',
+            ],
+            $definition
+        );
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Validate scope
+    |--------------------------------------------------------------------------
+    */
+
+    protected function ensureScopeMatches(
+        string $key,
+        string $scope,
+        ?int $companyId,
+        ?int $siteId
+    ): void {
+        if ($scope === 'module') {
+
+            if ($companyId !== null || $siteId !== null) {
+                throw new InvalidArgumentException(
+                    "Setting [{$key}] is module-level and cannot be overridden per company/site."
+                );
+            }
+
+            return;
+        }
+
+        if ($scope === 'company') {
+
+            if ($companyId === null || $siteId !== null) {
+                throw new InvalidArgumentException(
+                    "Setting [{$key}] requires a company scope."
+                );
+            }
+
+            return;
+        }
+
+        if ($scope === 'site') {
+
+            if ($companyId === null || $siteId === null) {
+                throw new InvalidArgumentException(
+                    "Setting [{$key}] requires a site scope."
+                );
+            }
+
+            return;
+        }
+
+        throw new InvalidArgumentException(
+            "Invalid scope [{$scope}] for setting [{$key}]."
+        );
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Cache
+    |--------------------------------------------------------------------------
+    */
+
+    protected function cacheKey(
+        string $module,
+        ?int $companyId,
+        ?int $siteId
+    ): string {
+        return sprintf(
+            'module-settings:%s:%s:%s',
+            $module,
+            $companyId ?? 'global',
+            $siteId ?? 'global'
+        );
+    }
+
+    public function forget(
+        string $module,
+        ?int $companyId = null,
+        ?int $siteId = null
+    ): void {
+        Cache::forget(
+            $this->cacheKey(
+                $module,
+                $companyId,
+                $siteId
+            )
+        );
     }
 }

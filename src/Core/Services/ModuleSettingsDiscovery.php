@@ -89,4 +89,11 @@ class ModuleSettingsDiscovery
             base_path('Modules')
         );
     }
+
+     public function settings(string $module): array
+    {
+        $configKey = $this->registry->configKey($module);
+
+        return config($configKey . '.settings', []);
+    }
 }

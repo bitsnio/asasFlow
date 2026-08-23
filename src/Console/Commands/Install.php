@@ -7,7 +7,7 @@ use Illuminate\Support\Facades\File;
 
 class Install extends Command
 {
-    protected $signature = 'asasflow:install';
+    protected $signature = 'asasflow:install {--migrate : Run database migrations after installation}';
     protected $description = 'Install and configure the AsasFlow package environment';
 
     public function handle()
@@ -117,6 +117,12 @@ class Install extends Command
         $this->call('config:clear');
 
         $this->info('AsasFlow installation complete!');
+
+        if ($this->option('migrate')) {
+            $this->info('Running database migrations...');
+
+            $this->call('migrate');
+        }
 
         return self::SUCCESS;
     }

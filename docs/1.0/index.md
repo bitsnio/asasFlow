@@ -7,6 +7,8 @@
     - [Generate Menu](/{{route}}/{{version}}/getting_started/create_menu)
     - [Generate Controllers & Routes](/{{route}}/{{version}}/getting_started/controller_and_routes)
     - [Create Permissions](/{{route}}/{{version}}/getting_started/permissions)
+- ## Features
+    - [Settings](/{{route}}/{{version}}/features/settings)
 - ## How To Use
     - [Filters And Pagination](/{{route}}/{{version}}/how_to_use/filters_and_pagination)
     

@@ -38,9 +38,9 @@ class ModuleSettingsGenerator
      */
     public function generate(): void
     {
-        $this->generateSettingsClass();
+        // $this->generateSettingsClass();
 
-        $this->generateSettingsMigration();
+        // $this->generateSettingsMigration();
 
         $this->generateSettingsConfig();
 

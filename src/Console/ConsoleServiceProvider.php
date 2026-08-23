@@ -4,6 +4,7 @@ namespace Bitsnio\AsasFlow\Console;
 
 use Illuminate\Support\Collection;
 use Bitsnio\AsasFlow\Console\Commands\Install;
+use Bitsnio\AsasFlow\Console\Commands\UpdateDocs;
 use Bitsnio\AsasFlow\Console\Commands\ModuleCommands\ModuleMakeCommand;
 
 class ConsoleServiceProvider
@@ -13,7 +14,7 @@ class ConsoleServiceProvider
         return collect([
             // Core
             Install::class,
-
+            UpdateDocs::class,
             // Module overrides
             ModuleMakeCommand::class,
         ]);

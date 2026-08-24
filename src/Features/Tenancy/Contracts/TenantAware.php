@@ -1,6 +1,6 @@
 <?php
 
-namespace AsasFlow\Features\Tenancy\Contracts;
+namespace Bitsnio\AsasFlow\Features\Tenancy\Contracts;
 
 interface TenantAware
 {

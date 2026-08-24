@@ -1,9 +1,9 @@
 <?php
 
-namespace AsasFlow\Features\Tenancy;
+namespace Bitsnio\AsasFlow\Features\Tenancy;
 
-use AsasFlow\Features\Tenancy\Http\Middleware\InitializeTenancy;
-use AsasFlow\Features\Tenancy\Services\TenantContext;
+use Bitsnio\AsasFlow\Features\Tenancy\Http\Middleware\InitializeTenancy;
+use Bitsnio\AsasFlow\Features\Tenancy\Services\TenantContext;
 use Illuminate\Support\ServiceProvider;
 
 class TenancyServiceProvider extends ServiceProvider

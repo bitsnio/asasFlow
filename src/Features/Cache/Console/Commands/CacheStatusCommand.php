@@ -1,8 +1,8 @@
 <?php
 
-namespace AsasFlow\Features\Cache\Console\Commands;
+namespace Bitsnio\AsasFlow\Features\Cache\Console\Commands;
 
-use AsasFlow\Features\Cache\Services\ModuleCacheManager;
+use Bitsnio\AsasFlow\Features\Cache\Services\ModuleCacheManager;
 use Illuminate\Console\Command;
 
 class CacheStatusCommand extends Command

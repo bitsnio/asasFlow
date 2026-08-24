@@ -5,8 +5,8 @@ namespace Bitsnio\AsasFlow;
 use Bitsnio\AsasFlow\Features\Cache\CacheServiceProvider;
 use Bitsnio\AsasFlow\Features\Settings\SettingsServiceProvider;
 use Bitsnio\AsasFlow\Features\Tenancy\TenancyServiceProvider;
-use Bitsnio\AsasFlow\Console\ConsoleServiceProvider;
 use Illuminate\Support\ServiceProvider;
+use Bitsnio\AsasFlow\Features\Settings\Services\ModuleSettingsDiscovery;
 
 class AsasFlowServiceProvider extends ServiceProvider
 {
@@ -15,20 +15,42 @@ class AsasFlowServiceProvider extends ServiceProvider
         // Register feature service providers
         $this->app->register(SettingsServiceProvider::class);
         $this->app->register(CacheServiceProvider::class);
-        
+        $this->app->register(\Bitsnio\Modules\LaravelModulesServiceProvider::class);
         // Register tenancy if enabled
         if (config('asasflow.tenancy.enabled', false)) {
             $this->app->register(TenancyServiceProvider::class);
         }
 
-        // Register console commands
-        $this->app->register(ConsoleServiceProvider::class);
+         $this->app->booting(function () {
+            if (config('asasflow.routes.enabled') === true) {
+                $this->loadRoutesFrom(__DIR__ . '/../routes/docs.php');
+            }
+        });
+
+         $this->mergeConfigFrom(__DIR__ . '/../config/asasflow.php', 'asasflow');
     }
 
     public function boot(): void
     {
         // Boot model observers for all modules
         $this->bootModuleObservers();
+
+         
+        $this->app
+            ->make(ModuleSettingsDiscovery::class)
+            ->discover();
+
+        // Publishing + commands (console only)
+        if ($this->app->runningInConsole()) {
+
+            $this->publishes([
+                __DIR__ . '/../config/asasflow.php' => \config_path('asasflow.php'),
+            ], 'asasflow-config');
+
+            $this->commands(
+                \Bitsnio\AsasFlow\Console\ConsoleServiceProvider::commands()->toArray()
+            );
+        }
     }
 
     protected function bootModuleObservers(): void

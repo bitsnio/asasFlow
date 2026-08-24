@@ -1,8 +1,8 @@
 <?php
 
-namespace AsasFlow\Features\Cache\Services;
+namespace Bitsnio\AsasFlow\Features\Cache\Services;
 
-use AsasFlow\Features\Tenancy\Services\TenantContext;
+use Bitsnio\AsasFlow\Features\Tenancy\Services\TenantContext;
 use Illuminate\Support\Facades\Log;
 
 class CacheObserverManager

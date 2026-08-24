@@ -9,6 +9,7 @@
     - [Create Permissions](/{{route}}/{{version}}/getting_started/permissions)
 - ## Features
     - [Settings](/{{route}}/{{version}}/features/settings)
+    - [Cache](/{{route}}/{{version}}/features/cache)
 - ## How To Use
     - [Filters And Pagination](/{{route}}/{{version}}/how_to_use/filters_and_pagination)
     

@@ -1,6 +1,6 @@
 <?php
 
-use AsasFlow\Features\Cache\Http\Controllers\CacheManagementController;
+use Bitsnio\AsasFlow\Features\Cache\Http\Controllers\CacheManagementController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('asasflow/cache')

@@ -1,8 +1,8 @@
 <?php
 
-namespace AsasFlow\Features\Tenancy\Http\Middleware;
+namespace Bitsnio\AsasFlow\Features\Tenancy\Http\Middleware;
 
-use AsasFlow\Features\Tenancy\Services\TenantContext;
+use Bitsnio\AsasFlow\Features\Tenancy\Services\TenantContext;
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;

@@ -1,15 +1,15 @@
 <?php
 
-namespace AsasFlow\Features\Cache;
+namespace Bitsnio\AsasFlow\Features\Cache;
 
-use AsasFlow\Features\Cache\Console\Commands\CacheFlushCommand;
-use AsasFlow\Features\Cache\Console\Commands\CacheStatusCommand;
-use AsasFlow\Features\Cache\Console\Commands\CacheWarmCommand;
-use AsasFlow\Features\Cache\Facades\ModuleCache;
-use AsasFlow\Features\Cache\Http\Middleware\CacheHeaders;
-use AsasFlow\Features\Cache\Http\Middleware\ModuleRouteCache;
-use AsasFlow\Features\Cache\Services\CacheObserverManager;
-use AsasFlow\Features\Cache\Services\ModuleCacheManager;
+use Bitsnio\AsasFlow\Features\Cache\Console\Commands\CacheFlushCommand;
+use Bitsnio\AsasFlow\Features\Cache\Console\Commands\CacheStatusCommand;
+use Bitsnio\AsasFlow\Features\Cache\Console\Commands\CacheWarmCommand;
+use Bitsnio\AsasFlow\Features\Cache\Facades\ModuleCache;
+use Bitsnio\AsasFlow\Features\Cache\Http\Middleware\CacheHeaders;
+use Bitsnio\AsasFlow\Features\Cache\Http\Middleware\ModuleRouteCache;
+use Bitsnio\AsasFlow\Features\Cache\Services\CacheObserverManager;
+use Bitsnio\AsasFlow\Features\Cache\Services\ModuleCacheManager;
 use Illuminate\Support\ServiceProvider;
 
 class CacheServiceProvider extends ServiceProvider
@@ -33,7 +33,7 @@ class CacheServiceProvider extends ServiceProvider
 
         // Merge config
         $this->mergeConfigFrom(
-            __DIR__ . '/../../config/asasflow.php',
+            __DIR__ . '/../../../config/asasflow.php',
             'asasflow'
         );
     }
@@ -59,12 +59,12 @@ class CacheServiceProvider extends ServiceProvider
 
         // Publish config
         $this->publishes([
-            __DIR__ . '/../../config/asasflow.php' => config_path('asasflow.php'),
+            __DIR__ . '/../../../config/asasflow.php' => config_path('asasflow.php'),
         ], 'asasflow-config');
 
         // Publish migrations
         $this->publishes([
-            __DIR__ . '/../../database/migrations' => database_path('migrations'),
+            __DIR__ . '/../../../database/migrations' => database_path('migrations'),
         ], 'asasflow-migrations');
     }
 }

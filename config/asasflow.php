@@ -63,7 +63,7 @@ return [
         ],
 
         // Tenant model class
-        'tenant_model' => \AsasFlow\Features\Tenancy\Models\Tenant::class,
+        'tenant_model' => \Bitsnio\AsasFlow\Features\Tenancy\Models\Tenant::class,
 
         // Connection name for tenant databases (when using separate strategy)
         'tenant_connection' => 'tenant',

@@ -1,8 +1,8 @@
 <?php
 
-namespace AsasFlow\Features\Tenancy\Services;
+namespace Bitsnio\AsasFlow\Features\Tenancy\Services;
 
-use AsasFlow\Features\Tenancy\Models\Tenant;
+use Bitsnio\AsasFlow\Features\Tenancy\Models\Tenant;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;

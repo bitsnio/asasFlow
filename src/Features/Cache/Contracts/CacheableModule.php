@@ -1,6 +1,6 @@
 <?php
 
-namespace AsasFlow\Features\Cache\Contracts;
+namespace Bitsnio\AsasFlow\Features\Cache\Contracts;
 
 interface CacheableModule
 {

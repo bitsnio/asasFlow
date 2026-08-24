@@ -1,9 +1,9 @@
 <?php
 
-namespace AsasFlow\Features\Cache\Console\Commands;
+namespace Bitsnio\AsasFlow\Features\Cache\Console\Commands;
 
-use AsasFlow\Features\Cache\Services\ModuleCacheManager;
-use AsasFlow\Features\Tenancy\Services\TenantContext;
+use Bitsnio\AsasFlow\Features\Cache\Services\ModuleCacheManager;
+use Bitsnio\AsasFlow\Features\Tenancy\Services\TenantContext;
 use Illuminate\Console\Command;
 
 class CacheFlushCommand extends Command

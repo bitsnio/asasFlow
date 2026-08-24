@@ -1,9 +1,9 @@
 <?php
 
-namespace AsasFlow\Features\Cache\Services;
+namespace Bitsnio\AsasFlow\Features\Cache\Services;
 
-use AsasFlow\Features\Cache\Models\CacheRegistry;
-use AsasFlow\Features\Tenancy\Services\TenantContext;
+use Bitsnio\AsasFlow\Features\Cache\Models\CacheRegistry;
+use Bitsnio\AsasFlow\Features\Tenancy\Services\TenantContext;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Log;

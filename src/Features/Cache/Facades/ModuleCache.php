@@ -1,6 +1,6 @@
 <?php
 
-namespace AsasFlow\Features\Cache\Facades;
+namespace Bitsnio\AsasFlow\Features\Cache\Facades;
 
 use Illuminate\Support\Facades\Facade;
 

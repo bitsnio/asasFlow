@@ -1,9 +1,9 @@
 <?php
 
-namespace AsasFlow\Features\Cache\Http\Middleware;
+namespace Bitsnio\AsasFlow\Features\Cache\Http\Middleware;
 
-use AsasFlow\Features\Cache\Services\ModuleCacheManager;
-use AsasFlow\Features\Tenancy\Services\TenantContext;
+use Bitsnio\AsasFlow\Features\Cache\Services\ModuleCacheManager;
+use Bitsnio\AsasFlow\Features\Tenancy\Services\TenantContext;
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;

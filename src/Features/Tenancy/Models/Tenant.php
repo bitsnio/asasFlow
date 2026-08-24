@@ -1,6 +1,6 @@
 <?php
 
-namespace AsasFlow\Features\Tenancy\Models;
+namespace Bitsnio\AsasFlow\Features\Tenancy\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;

@@ -1,6 +1,6 @@
 <?php
 
-namespace AsasFlow\Features\Cache\Http\Middleware;
+namespace Bitsnio\AsasFlow\Features\Cache\Http\Middleware;
 
 use Closure;
 use Illuminate\Http\Request;

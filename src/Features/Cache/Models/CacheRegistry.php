@@ -1,6 +1,6 @@
 <?php
 
-namespace AsasFlow\Features\Cache\Models;
+namespace Bitsnio\AsasFlow\Features\Cache\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;

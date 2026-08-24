@@ -1,6 +1,6 @@
 <?php
 
-namespace AsasFlow\Generators\Cache;
+namespace Bitsnio\AsasFlow\Generators\Cache;
 
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
@@ -108,8 +108,8 @@ class CacheObserverGenerator
 namespace {{ namespace }};
 
 use {{ model_namespace }}\{{ model }};
-use AsasFlow\Features\Cache\Services\CacheObserverManager;
-use AsasFlow\Features\Cache\Services\ModuleCacheManager;
+use Bitsnio\AsasFlow\Features\Cache\Services\CacheObserverManager;
+use Bitsnio\AsasFlow\Features\Cache\Services\ModuleCacheManager;
 
 class {{ class }}
 {

@@ -2,69 +2,77 @@
 
 namespace Bitsnio\AsasFlow\Features\Cache;
 
-use Bitsnio\AsasFlow\Features\Cache\Console\Commands\CacheFlushCommand;
-use Bitsnio\AsasFlow\Features\Cache\Console\Commands\CacheStatusCommand;
+use Bitsnio\AsasFlow\Features\Cache\Console\Commands\CacheClearCommand;
+use Bitsnio\AsasFlow\Features\Cache\Console\Commands\CacheStatsCommand;
 use Bitsnio\AsasFlow\Features\Cache\Console\Commands\CacheWarmCommand;
-use Bitsnio\AsasFlow\Features\Cache\Facades\ModuleCache;
-use Bitsnio\AsasFlow\Features\Cache\Http\Middleware\CacheHeaders;
-use Bitsnio\AsasFlow\Features\Cache\Http\Middleware\ModuleRouteCache;
-use Bitsnio\AsasFlow\Features\Cache\Services\CacheObserverManager;
-use Bitsnio\AsasFlow\Features\Cache\Services\ModuleCacheManager;
+use Bitsnio\AsasFlow\Features\Cache\Facades\MicroCache;
+use Bitsnio\AsasFlow\Features\Cache\Http\Middleware\AutoCacheMiddleware;
+use Bitsnio\AsasFlow\Features\Cache\Http\Middleware\CacheControlMiddleware;
+use Bitsnio\AsasFlow\Features\Cache\Observers\ModelCacheObserver;
+use Bitsnio\AsasFlow\Features\Cache\Services\CacheInvalidator;
+use Bitsnio\AsasFlow\Features\Cache\Services\CacheKeyGenerator;
+use Bitsnio\AsasFlow\Features\Cache\Services\CacheManager;
+use Bitsnio\AsasFlow\Features\Cache\Services\CacheResponseSerializer;
+use Bitsnio\AsasFlow\Features\Cache\Services\CacheStampedeProtector;
+use Bitsnio\AsasFlow\Features\Cache\Services\CacheStatsCollector;
 use Illuminate\Support\ServiceProvider;
 
 class CacheServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
-        // Register cache manager
-        $this->app->singleton(ModuleCacheManager::class, function ($app) {
-            return new ModuleCacheManager();
+        $this->app->singleton(CacheKeyGenerator::class);
+        $this->app->singleton(CacheResponseSerializer::class);
+        $this->app->singleton(CacheStampedeProtector::class);
+        $this->app->singleton(CacheStatsCollector::class);
+
+        $this->app->singleton(CacheManager::class, function ($app) {
+            return new CacheManager(
+                $app->make(CacheKeyGenerator::class),
+                $app->make(CacheResponseSerializer::class),
+                $app->make(CacheStampedeProtector::class),
+                $app->make(CacheStatsCollector::class),
+            );
         });
 
-        // Register observer manager
-        $this->app->singleton(CacheObserverManager::class, function ($app) {
-            return new CacheObserverManager($app->make(ModuleCacheManager::class));
+        $this->app->singleton(CacheInvalidator::class, function ($app) {
+            return new CacheInvalidator(
+                $app->make(CacheKeyGenerator::class),
+                $app->make(CacheManager::class),
+            );
         });
 
-        // Register facade accessor
         $this->app->singleton('asasflow.cache', function ($app) {
-            return $app->make(ModuleCacheManager::class);
+            return $app->make(CacheManager::class);
         });
 
-        // Merge config
         $this->mergeConfigFrom(
-            __DIR__ . '/../../../config/asasflow.php',
-            'asasflow'
+            __DIR__ . '/../../../config/asasflow-cache.php',
+            'asasflow-cache'
         );
     }
 
     public function boot(): void
     {
-        // Register middleware aliases
         $router = $this->app['router'];
-        $router->aliasMiddleware('asasflow.cache', ModuleRouteCache::class);
-        $router->aliasMiddleware('asasflow.cache.headers', CacheHeaders::class);
 
-        // Register commands
+        $router->aliasMiddleware('asasflow.cache', AutoCacheMiddleware::class);
+        $router->aliasMiddleware('asasflow.cache.control', CacheControlMiddleware::class);
+
         if ($this->app->runningInConsole()) {
             $this->commands([
-                CacheFlushCommand::class,
+                CacheClearCommand::class,
+                CacheStatsCommand::class,
                 CacheWarmCommand::class,
-                CacheStatusCommand::class,
             ]);
         }
 
-        // Load routes
-        $this->loadRoutesFrom(__DIR__ . '/routes/api.php');
+        if (config('asasflow-cache.dashboard.enabled', true)) {
+            $this->loadRoutesFrom(__DIR__ . '/routes/dashboard.php');
+        }
 
-        // Publish config
         $this->publishes([
-            __DIR__ . '/../../../config/asasflow.php' => config_path('asasflow.php'),
-        ], 'asasflow-config');
-
-        // Publish migrations
-        $this->publishes([
-            __DIR__ . '/../../../database/migrations' => database_path('migrations'),
-        ], 'asasflow-migrations');
+            __DIR__ . '/../../../config/asasflow-cache.php' => config_path('asasflow-cache.php'),
+        ], 'asasflow-cache-config');
     }
 }

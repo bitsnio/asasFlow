@@ -2,36 +2,26 @@
 
 namespace Bitsnio\AsasFlow\Features\Cache\Console\Commands;
 
-use Bitsnio\AsasFlow\Features\Cache\Services\ModuleCacheManager;
 use Illuminate\Console\Command;
 
 class CacheWarmCommand extends Command
 {
     protected $signature = 'asasflow:cache:warm
-                            {module : Module name to warm}
-                            {--tenant= : Tenant ID for scoped warming}';
+                            {endpoint : URL endpoint to warm}
+                            {--times=1 : Number of requests}';
 
-    protected $description = 'Warm ASASFLOW module cache';
-
-    protected ModuleCacheManager $cacheManager;
-
-    public function __construct(ModuleCacheManager $cacheManager)
-    {
-        parent::__construct();
-        $this->cacheManager = $cacheManager;
-    }
+    protected $description = 'Warm cache by hitting endpoints';
 
     public function handle(): int
     {
-        $module = $this->argument('module');
-        $tenantId = $this->option('tenant');
+        $endpoint = $this->argument('endpoint');
+        $times = (int) $this->option('times');
 
-        $this->info("🔥 Warming cache for module: {$module}...");
-        
-        $this->cacheManager->warmModuleCache($module, $tenantId);
-        
-        $this->info('✅ Cache warming initiated');
-        
+        for ($i = 0; $i < $times; $i++) {
+            $response = \Illuminate\Support\Facades\Http::get($endpoint);
+            $this->info("Warmed {$endpoint} - Status: {$response->status()}");
+        }
+
         return 0;
     }
 }

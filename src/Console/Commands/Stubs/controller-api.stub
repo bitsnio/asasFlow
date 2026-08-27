@@ -1,0 +1,35 @@
+<?php
+
+namespace {{namespace}};
+
+use Illuminate\Routing\Controller;
+use Illuminate\Http\Request;
+{{imports}}
+
+class {{class_name}} extends Controller
+{
+    public function index()
+    {
+        {{index_method}}
+    }
+
+    public function store(Request $request)
+    {
+        {{store_method}}
+    }
+
+    public function show($id)
+    {
+        {{show_method}}
+    }
+
+    public function update(Request $request, $id)
+    {
+        {{update_method}}
+    }
+
+    public function destroy($id)
+    {
+        {{destroy_method}}
+    }
+}

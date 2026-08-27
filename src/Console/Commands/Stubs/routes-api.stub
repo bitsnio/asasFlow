@@ -1,0 +1,9 @@
+<?php
+
+use Illuminate\Support\Facades\Route;
+use Illuminate\Routing\Attributes\Route as RouteAttribute;
+use Illuminate\Routing\Attributes\Middleware;
+
+{{imports}}
+
+{{route_groups}}

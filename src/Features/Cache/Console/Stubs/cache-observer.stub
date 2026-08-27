@@ -1,0 +1,24 @@
+<?php
+
+namespace {{ namespace }};
+
+use {{ model_namespace }}\{{ model }};
+use Bitsnio\AsasFlow\Features\Cache\Observers\ModelCacheObserver;
+use Bitsnio\AsasFlow\Features\Cache\Services\CacheInvalidator;
+use Bitsnio\AsasFlow\Features\Cache\Services\CacheKeyGenerator;
+
+class {{ class }} extends ModelCacheObserver
+{
+    protected array $cacheTags = [
+        {{ tags }}
+    ];
+
+    protected array $cacheInvalidationRelations = {{ relations }};
+
+    public function __construct(
+        CacheInvalidator $invalidator,
+        CacheKeyGenerator $keyGenerator,
+    ) {
+        parent::__construct($invalidator, $keyGenerator);
+    }
+}

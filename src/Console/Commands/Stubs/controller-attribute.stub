@@ -1,0 +1,44 @@
+<?php
+
+namespace {{namespace}};
+
+use Illuminate\Routing\Controller;
+use Illuminate\Http\Request;
+use Illuminate\Routing\Attributes\Route;
+use Illuminate\Routing\Attributes\Middleware;
+{{imports}}
+
+#[Route("{{route_path}}", name: "{{route_name}}")]
+#[Middleware([{{middleware}}])]
+class {{class_name}} extends Controller
+{
+    #[Route("", name: "index")]
+    public function index()
+    {
+        {{index_method}}
+    }
+
+    #[Route("", name: "store")]
+    public function store(Request $request)
+    {
+        {{store_method}}
+    }
+
+    #[Route("{id}", name: "show")]
+    public function show($id)
+    {
+        {{show_method}}
+    }
+
+    #[Route("{id}", name: "update")]
+    public function update(Request $request, $id)
+    {
+        {{update_method}}
+    }
+
+    #[Route("{id}", name: "destroy")]
+    public function destroy($id)
+    {
+        {{destroy_method}}
+    }
+}

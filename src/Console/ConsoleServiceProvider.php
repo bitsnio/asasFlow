@@ -2,29 +2,24 @@
 
 namespace Bitsnio\AsasFlow\Console;
 
-use Illuminate\Support\ServiceProvider;
 use Bitsnio\AsasFlow\Console\Commands\ModuleCommands\ModuleMakeCommand;
-class ConsoleServiceProvider extends ServiceProvider
+use Illuminate\Support\Collection;
+use Bitsnio\AsasFlow\Console\Commands\Install;
+use Bitsnio\AsasFlow\Console\Commands\ControllerCommands\GenerateControllersCommand;
+use Bitsnio\AsasFlow\Console\Commands\UpdateDocs;
+
+class ConsoleServiceProvider 
 {
-    public function register(): void
+     public static function commands(): Collection
     {
-        //
+        return collect([
+            // Core
+            Install::class,
+            UpdateDocs::class,
+            GenerateControllersCommand::class,
+            // Module overrides
+            ModuleMakeCommand::class,
+        ]);
     }
 
-    public function boot(): void
-    {
-        if ($this->app->runningInConsole()) {
-            $this->commands([
-                // Module Commands
-                ModuleMakeCommand::class,
-                
-                // Controller Commands
-                \Bitsnio\AsasFlow\Console\Commands\ControllerCommands\GenerateControllersCommand::class,
-
-                // Other Commands
-                \Bitsnio\AsasFlow\Console\Commands\Install::class,
-                \Bitsnio\AsasFlow\Console\Commands\UpdateDocs::class,
-            ]);
-        }
-    }
 }

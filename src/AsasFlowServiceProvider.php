@@ -36,9 +36,13 @@ class AsasFlowServiceProvider extends ServiceProvider
         $this->bootModuleObservers();
 
          
-        $this->app
-            ->make(ModuleSettingsDiscovery::class)
-            ->discover();
+        // $this->app
+        //     ->make(ModuleSettingsDiscovery::class)
+        //     ->discover();
+
+         $this->loadMigrationsFrom(
+        __DIR__ . '/../database/migrations'
+    );
 
         // Publishing + commands (console only)
         if ($this->app->runningInConsole()) {

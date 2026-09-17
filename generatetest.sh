@@ -1,17 +1,57 @@
-#!/usr/bin/env bash
+#!/bin/bash
 
-set -e
+# Settings Feature Tests Generation Script
+# Uses project root as the base, mirrors the Controller setup script style
+# Run from project root: ./setup-settings-tests.sh
 
-BASE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-TEST_DIR="$BASE_DIR/src/Features/Settings/Tests"
+echo "🚀 Setting up Settings Feature Tests..."
+echo ""
 
-echo "Creating Settings feature tests..."
-echo "Target: $TEST_DIR"
+PROJECT_ROOT="$(pwd)"
+SETTINGS_DIR="$PROJECT_ROOT/src/Features/Settings"
+TEST_DIR="$SETTINGS_DIR/Tests"
 
+echo "📁 Project Root: $PROJECT_ROOT"
+echo "📁 Settings Dir: $SETTINGS_DIR"
+echo "📁 Tests Dir:    $TEST_DIR"
+echo ""
+
+# Sanity check — make sure we're at the package root
+if [ ! -d "$PROJECT_ROOT/src" ]; then
+    echo "❌ Error: $PROJECT_ROOT/src not found."
+    echo "   Please run this script from the package root directory."
+    exit 1
+fi
+
+# Remove existing tests directory if it exists
+if [ -d "$TEST_DIR" ]; then
+    echo "⚠️  Existing Tests directory found. Removing..."
+    rm -rf "$TEST_DIR"
+    echo "✅ Removed existing directory"
+fi
+
+# Create directory structure
 mkdir -p "$TEST_DIR"
 
-cat > "$TEST_DIR/ModuleSettingsDiscoveryTest.php" <<'PHP'
-<?php
+echo "✅ Directory structure created"
+echo ""
+
+# ============================================
+# Helper function to create files
+# ============================================
+create_file() {
+    local file_path="$1"
+    local content="$2"
+
+    mkdir -p "$(dirname "$file_path")"
+    printf '%s\n' "$content" > "$file_path"
+    echo "✅ Created: $file_path"
+}
+
+# ============================================
+# 1. ModuleSettingsDiscoveryTest.php
+# ============================================
+create_file "$TEST_DIR/ModuleSettingsDiscoveryTest.php" '<?php
 
 declare(strict_types=1);
 
@@ -23,14 +63,14 @@ beforeEach(function () {
     app(ModuleSettingsDiscovery::class)->discover();
 });
 
-it('discovers modules that contain a settings.php file', function () {
+it("discovers modules that contain a settings.php file", function () {
     $registry = app(ModuleSettingsRegistry::class);
 
     expect($registry->all())
         ->toBeArray();
 });
 
-it('registers modules with settings definitions', function () {
+it("registers modules with settings definitions", function () {
     $registry = app(ModuleSettingsRegistry::class);
 
     foreach ($registry->all() as $module => $configKey) {
@@ -44,7 +84,7 @@ it('registers modules with settings definitions', function () {
     }
 });
 
-it('loads settings definitions from module settings.php', function () {
+it("loads settings definitions from module settings.php", function () {
     $registry = app(ModuleSettingsRegistry::class);
     $service = app(ModuleSettingsService::class);
 
@@ -61,11 +101,12 @@ it('loads settings definitions from module settings.php', function () {
             }
         }
     }
-});
-PHP
+});'
 
-cat > "$TEST_DIR/ModuleSettingsServiceTest.php" <<'PHP'
-<?php
+# ============================================
+# 2. ModuleSettingsServiceTest.php
+# ============================================
+create_file "$TEST_DIR/ModuleSettingsServiceTest.php" '<?php
 
 declare(strict_types=1);
 
@@ -77,7 +118,7 @@ beforeEach(function () {
         ->discover();
 });
 
-it('returns module settings with defaults', function () {
+it("returns module settings with defaults", function () {
     $registry = app(ModuleSettingsRegistry::class);
     $service = app(ModuleSettingsService::class);
 
@@ -90,24 +131,24 @@ it('returns module settings with defaults', function () {
         foreach ($definitions as $key => $definition) {
             $normalized = is_array($definition)
                 ? array_merge([
-                    'default' => null,
-                    'scope' => 'module',
+                    "default" => null,
+                    "scope" => "module",
                 ], $definition)
                 : [
-                    'default' => $definition,
-                    'scope' => 'module',
+                    "default" => $definition,
+                    "scope" => "module",
                 ];
 
             expect($values)
                 ->toHaveKey($key);
 
             expect($values[$key])
-                ->toBe($normalized['default']);
+                ->toBe($normalized["default"]);
         }
     }
 });
 
-it('can retrieve a single setting', function () {
+it("can retrieve a single setting", function () {
     $registry = app(ModuleSettingsRegistry::class);
     $service = app(ModuleSettingsService::class);
 
@@ -122,7 +163,7 @@ it('can retrieve a single setting', function () {
     }
 });
 
-it('returns the supplied fallback for an unknown setting key', function () {
+it("returns the supplied fallback for an unknown setting key", function () {
     $registry = app(ModuleSettingsRegistry::class);
     $service = app(ModuleSettingsService::class);
 
@@ -130,14 +171,14 @@ it('returns the supplied fallback for an unknown setting key', function () {
         expect(
             $service->get(
                 $module,
-                '__non_existing_setting__',
-                'fallback-value'
+                "__non_existing_setting__",
+                "fallback-value"
             )
-        )->toBe('fallback-value');
+        )->toBe("fallback-value");
     }
 });
 
-it('rejects an unknown setting during update', function () {
+it("rejects an unknown setting during update", function () {
     $registry = app(ModuleSettingsRegistry::class);
     $service = app(ModuleSettingsService::class);
 
@@ -145,7 +186,7 @@ it('rejects an unknown setting during update', function () {
         expect(fn () => $service->update(
             $module,
             [
-                '__non_existing_setting__' => 'test',
+                "__non_existing_setting__" => "test",
             ]
         ))->toThrow(
             \InvalidArgumentException::class
@@ -153,7 +194,7 @@ it('rejects an unknown setting during update', function () {
     }
 });
 
-it('returns a complete schema', function () {
+it("returns a complete schema", function () {
     $registry = app(ModuleSettingsRegistry::class);
     $service = app(ModuleSettingsService::class);
 
@@ -164,17 +205,18 @@ it('returns a complete schema', function () {
 
         foreach ($schema as $key => $definition) {
             expect($definition)
-                ->toHaveKey('key')
-                ->toHaveKey('value')
-                ->toHaveKey('default')
-                ->toHaveKey('scope');
+                ->toHaveKey("key")
+                ->toHaveKey("value")
+                ->toHaveKey("default")
+                ->toHaveKey("scope");
         }
     }
-});
-PHP
+});'
 
-cat > "$TEST_DIR/ModuleSettingsScopeTest.php" <<'PHP'
-<?php
+# ============================================
+# 3. ModuleSettingsScopeTest.php
+# ============================================
+create_file "$TEST_DIR/ModuleSettingsScopeTest.php" '<?php
 
 declare(strict_types=1);
 
@@ -186,7 +228,7 @@ beforeEach(function () {
     app(ModuleSettingsDiscovery::class)->discover();
 });
 
-it('supports module level settings', function () {
+it("supports module level settings", function () {
     $registry = app(ModuleSettingsRegistry::class);
     $service = app(ModuleSettingsService::class);
 
@@ -196,20 +238,20 @@ it('supports module level settings', function () {
         foreach ($definitions as $key => $definition) {
             $definition = is_array($definition)
                 ? array_merge([
-                    'scope' => 'module',
+                    "scope" => "module",
                 ], $definition)
                 : [
-                    'scope' => 'module',
+                    "scope" => "module",
                 ];
 
-            if ($definition['scope'] !== 'module') {
+            if ($definition["scope"] !== "module") {
                 continue;
             }
 
             $result = $service->update(
                 $module,
                 [
-                    $key => $definition['default'],
+                    $key => $definition["default"],
                 ]
             );
 
@@ -219,7 +261,7 @@ it('supports module level settings', function () {
     }
 });
 
-it('rejects company scope for module level settings', function () {
+it("rejects company scope for module level settings", function () {
     $registry = app(ModuleSettingsRegistry::class);
     $service = app(ModuleSettingsService::class);
 
@@ -229,20 +271,20 @@ it('rejects company scope for module level settings', function () {
         foreach ($definitions as $key => $definition) {
             $definition = is_array($definition)
                 ? array_merge([
-                    'scope' => 'module',
+                    "scope" => "module",
                 ], $definition)
                 : [
-                    'scope' => 'module',
+                    "scope" => "module",
                 ];
 
-            if ($definition['scope'] !== 'module') {
+            if ($definition["scope"] !== "module") {
                 continue;
             }
 
             expect(fn () => $service->update(
                 $module,
                 [
-                    $key => $definition['default'],
+                    $key => $definition["default"],
                 ],
                 1
             ))->toThrow(\InvalidArgumentException::class);
@@ -250,7 +292,7 @@ it('rejects company scope for module level settings', function () {
     }
 });
 
-it('rejects site scope without a company', function () {
+it("rejects site scope without a company", function () {
     $registry = app(ModuleSettingsRegistry::class);
     $service = app(ModuleSettingsService::class);
 
@@ -260,31 +302,32 @@ it('rejects site scope without a company', function () {
         foreach ($definitions as $key => $definition) {
             $definition = is_array($definition)
                 ? array_merge([
-                    'scope' => 'module',
+                    "scope" => "module",
                 ], $definition)
                 : [
-                    'scope' => 'module',
+                    "scope" => "module",
                 ];
 
-            if ($definition['scope'] !== 'site') {
+            if ($definition["scope"] !== "site") {
                 continue;
             }
 
             expect(fn () => $service->update(
                 $module,
                 [
-                    $key => $definition['default'],
+                    $key => $definition["default"],
                 ],
                 null,
                 1
             ))->toThrow(\InvalidArgumentException::class);
         }
     }
-});
-PHP
+});'
 
-cat > "$TEST_DIR/ModuleSettingsCacheTest.php" <<'PHP'
-<?php
+# ============================================
+# 4. ModuleSettingsCacheTest.php
+# ============================================
+create_file "$TEST_DIR/ModuleSettingsCacheTest.php" '<?php
 
 declare(strict_types=1);
 
@@ -300,7 +343,7 @@ beforeEach(function () {
     Cache::flush();
 });
 
-it('caches resolved settings', function () {
+it("caches resolved settings", function () {
     $registry = app(ModuleSettingsRegistry::class);
     $service = app(ModuleSettingsService::class);
 
@@ -315,7 +358,7 @@ it('caches resolved settings', function () {
     }
 });
 
-it('forgets the cache after an update', function () {
+it("forgets the cache after an update", function () {
     $registry = app(ModuleSettingsRegistry::class);
     $service = app(ModuleSettingsService::class);
 
@@ -325,19 +368,19 @@ it('forgets the cache after an update', function () {
         foreach ($definitions as $key => $definition) {
             $definition = is_array($definition)
                 ? array_merge([
-                    'scope' => 'module',
-                    'default' => null,
+                    "scope" => "module",
+                    "default" => null,
                 ], $definition)
                 : [
-                    'scope' => 'module',
-                    'default' => $definition,
+                    "scope" => "module",
+                    "default" => $definition,
                 ];
 
-            if ($definition['scope'] !== 'module') {
+            if ($definition["scope"] !== "module") {
                 continue;
             }
 
-            $newValue = '__cache_test__';
+            $newValue = "__cache_test__";
 
             $service->update(
                 $module,
@@ -355,11 +398,11 @@ it('forgets the cache after an update', function () {
     }
 
     $this->markTestSkipped(
-        'No module-level settings are available.'
+        "No module-level settings are available."
     );
 });
 
-it('isolates cache entries by company and site', function () {
+it("isolates cache entries by company and site", function () {
     $service = app(ModuleSettingsService::class);
     $registry = app(ModuleSettingsRegistry::class);
 
@@ -380,11 +423,12 @@ it('isolates cache entries by company and site', function () {
 
         expect($siteValues)->not->toBeSameAs($companyValues);
     }
-});
-PHP
+});'
 
-cat > "$TEST_DIR/ModuleSettingsApiTest.php" <<'PHP'
-<?php
+# ============================================
+# 5. ModuleSettingsApiTest.php
+# ============================================
+create_file "$TEST_DIR/ModuleSettingsApiTest.php" '<?php
 
 declare(strict_types=1);
 
@@ -395,7 +439,7 @@ beforeEach(function () {
     app(ModuleSettingsDiscovery::class)->discover();
 });
 
-it('requires authentication for settings endpoints', function () {
+it("requires authentication for settings endpoints", function () {
     $registry = app(ModuleSettingsRegistry::class);
 
     foreach ($registry->all() as $module => $configKey) {
@@ -407,34 +451,34 @@ it('requires authentication for settings endpoints', function () {
     }
 
     $this->markTestSkipped(
-        'No settings-enabled modules were discovered.'
+        "No settings-enabled modules were discovered."
     );
 });
 
-it('can retrieve module settings through the API', function () {
+it("can retrieve module settings through the API", function () {
     /*
-     * Authenticate using the host application's real auth mechanism.
+     * Authenticate using the host application application auth mechanism.
      *
      * Example:
      *
-     * $this->actingAs($user, 'api');
+     * $this->actingAs($user, "api");
      *
      * or, if the host uses JWT:
      *
-     * $token = auth('api')->login($user);
+     * $token = auth("api")->login($user);
      *
      * $this->withHeader(
-     *     'Authorization',
+     *     "Authorization",
      *     "Bearer {$token}"
      * );
      */
 
     $this->markTestIncomplete(
-        'Configure authentication for the host application.'
+        "Configure authentication for the host application."
     );
 });
 
-it('can update module settings through the API', function () {
+it("can update module settings through the API", function () {
     /*
      * Configure authentication above before enabling this test.
      *
@@ -444,19 +488,26 @@ it('can update module settings through the API', function () {
      */
 
     $this->markTestIncomplete(
-        'Configure authentication for the host application.'
+        "Configure authentication for the host application."
     );
-});
-PHP
+});'
 
+# ============================================
+# 6. COMPLETION MESSAGE
+# ============================================
 echo ""
-echo "Settings tests created successfully:"
+echo "✅ Settings Feature Tests setup complete!"
 echo ""
-
-find "$TEST_DIR" -maxdepth 1 -type f -print | sort
-
+echo "📊 Files created:"
+echo "  - Tests: " $(find "$TEST_DIR" -maxdepth 1 -type f -name "*.php" | wc -l) "files"
 echo ""
-echo "To publish them into the host application:"
+echo "📁 Location:"
+echo "  - Tests: $TEST_DIR"
 echo ""
-echo "  php artisan vendor:publish --tag=asasflow-settings-tests"
+echo "📋 Next steps:"
+echo "1. Run the test suite:"
+echo "   ./vendor/bin/pest src/Features/Settings/Tests"
+echo ""
+echo "2. To publish them into the host application (if registered):"
+echo "   php artisan vendor:publish --tag=asasflow-settings-tests"
 echo ""

@@ -7,6 +7,7 @@ use Illuminate\Support\Collection;
 use Bitsnio\AsasFlow\Console\Commands\Install;
 use Bitsnio\AsasFlow\Console\Commands\ControllerCommands\GenerateControllersCommand;
 use Bitsnio\AsasFlow\Console\Commands\UpdateDocs;
+use Bitsnio\AsasFlow\Console\Commands\InstallTests;
 
 class ConsoleServiceProvider 
 {
@@ -15,6 +16,7 @@ class ConsoleServiceProvider
         return collect([
             // Core
             Install::class,
+            InstallTests::class,
             UpdateDocs::class,
             GenerateControllersCommand::class,
             // Module overrides

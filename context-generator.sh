@@ -10,7 +10,7 @@
 
 # 1. INCLUDE_DIRS: Directories to process for your CURRENT requirement.
 #    Leave as empty array () to create context for the WHOLE PROJECT.
-INCLUDE_DIRS=("src/Console/Commands/TestCommands")
+INCLUDE_DIRS=("src/Console/Commands/ControllerCommands")
 
 # 2. EXTRA_EXCLUDE_DIRS: Directories to SKIP. 
 #    These will be removed from BOTH the directory tree AND file scanning.
@@ -18,14 +18,14 @@ INCLUDE_DIRS=("src/Console/Commands/TestCommands")
 EXTRA_EXCLUDE_DIRS=("stubs" "docs" "packages")
 
 # 3. INCLUDE_FILES: Specific files to force-include even if their folder is skipped.
-INCLUDE_FILES=("src/Console/Commands/InstallTests.php")
+INCLUDE_FILES=("")
 # 4. CONTEXT_DIR: Directory where generated context files are saved.
 CONTEXT_DIR=".ai_contexts"
 
 # 5. FULL_PROJECT_STRUCTURE: 
 #    Set to true to show the FULL project directory tree (minus EXCLUDE_DIRS).
 #    Set to false to only show the structure of the directories in INCLUDE_DIRS.
-FULL_PROJECT_STRUCTURE=true
+FULL_PROJECT_STRUCTURE=false
 
 # ----------------------------------------------------------
 

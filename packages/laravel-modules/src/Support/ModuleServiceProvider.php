@@ -54,6 +54,7 @@ abstract class ModuleServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+       
         $this->registerCommands();
         $this->registerCommandSchedules();
         $this->registerTranslations();

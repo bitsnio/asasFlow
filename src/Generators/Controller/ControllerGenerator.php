@@ -2,230 +2,562 @@
 
 namespace Bitsnio\AsasFlow\Generators\Controller;
 
-use Illuminate\Support\Str;
-use Illuminate\Support\Facades\File;
-use Bitsnio\AsasFlow\Console\Commands\ControllerCommands\Services\FileHandler;
+use Bitsnio\AsasFlow\Foundation\Contracts\GeneratorInterface;
+use Bitsnio\AsasFlow\Foundation\Support\FileHandler;
+use Bitsnio\AsasFlow\Foundation\Support\GeneratedBlock;
+use Bitsnio\AsasFlow\Foundation\Support\StubRenderer;
+use Bitsnio\AsasFlow\Generators\Menu\MenuDefinition;
+use Bitsnio\AsasFlow\Generators\Schema\SchemaDefinition;
 
-class ControllerGenerator
+class ControllerGenerator implements GeneratorInterface
 {
-    protected $existingControllers = [];
-
     public function __construct(
-        protected FileHandler $fileHandler,
-        protected RouteNameGenerator $routeNameGenerator
+        protected FileHandler $files,
+        protected StubRenderer $stubs,
     ) {}
 
-    public function generate($module, array $structure, array $options = []): array
-    {
+    public function generate(
+        $module,
+        array $definitions,
+        array $options = []
+    ): array {
         $results = [];
-        $this->loadExistingControllers($module);
 
-        foreach ($structure["controllers"] as $config) {
-            $result = $this->generateController($module, $config, $options);
-            $results[] = $result;
+        foreach ($definitions as $definition) {
+            $this->generateNode(
+                $module,
+                $definition,
+                $options,
+                $results
+            );
         }
 
         return $results;
     }
 
-    public function preview($module, array $structure, array $options = []): array
-    {
-        $changes = [];
-        $this->loadExistingControllers($module);
+    public function preview(
+        $module,
+        array $definitions,
+        array $options = []
+    ): array {
+        $results = [];
 
-        foreach ($structure["controllers"] as $config) {
-            $path = $this->getControllerPath($module, $config["controller_path"]);
-            $exists = $this->fileHandler->exists($path);
-            
-            $changes[] = [
-                "action" => $exists ? "update" : "create",
-                "file" => $path,
-                "type" => "controller",
-                "name" => $config["controller_name"]
+        foreach ($definitions as $definition) {
+            $this->previewNode(
+                $module,
+                $definition,
+                $results
+            );
+        }
+
+        return $results;
+    }
+
+    public function syncFromSchema(
+        $module,
+        MenuDefinition $definition,
+        SchemaDefinition $schema
+    ): array {
+        if (!$definition->hasController()) {
+            return [
+                'action' => 'skipped',
             ];
         }
 
-        return $changes;
-    }
+        $path =
+            $this->files->getControllerPath(
+                $module,
+                $definition->controllerRelativePath()
+            );
 
-    protected function generateController($module, array $config, array $options): array
-    {
-        $controllerName = $config["controller_name"];
-        $controllerPath = $config["controller_path"];
-        $fullPath = $this->getControllerPath($module, $controllerPath);
-        
-        $action = "created";
-        $skip = false;
-
-        if (!$options["force"] ?? false) {
-            if (isset($this->existingControllers[$controllerPath])) {
-                $action = "skipped";
-                $skip = true;
-            }
+        if (!$this->files->exists($path)) {
+            return [
+                'action' => 'missing',
+                'path' => $path,
+            ];
         }
 
-        if (!$skip) {
-            $this->createControllerFile($module, $config, $fullPath);
-            $action = isset($this->existingControllers[$controllerPath]) ? "updated" : "created";
+        $document =
+            $this->files->read($path);
+
+        if (
+            !GeneratedBlock::has(
+                $document,
+                'methods'
+            )
+        ) {
+            return [
+                'action' => 'skipped-no-marker',
+                'path' => $path,
+            ];
         }
+
+        $this->files->updateGeneratedBlock(
+            $path,
+            'methods',
+            $this->methods(
+                $definition
+            )
+        );
 
         return [
-            "name" => $controllerName,
-            "path" => $controllerPath,
-            "action" => $action,
-            "full_path" => $fullPath
+            'action' => 'updated',
+            'path' => $path,
         ];
     }
 
-    protected function createControllerFile($module, array $config, string $path): void
-    {
-        $content = $this->buildControllerContent($module, $config);
-        $this->fileHandler->ensureDirectoryExists(dirname($path));
-        $this->fileHandler->writeFile($path, $content, true);
+    protected function generateNode(
+        $module,
+        MenuDefinition $definition,
+        array $options,
+        array &$results
+    ): void {
+        if ($definition->hasController()) {
+            $relative =
+                $definition->controllerRelativePath();
+
+            $path =
+                $this->files->getControllerPath(
+                    $module,
+                    $relative
+                );
+
+            $exists =
+                $this->files->exists($path);
+
+            if (!$exists) {
+                $this->files->writeFile(
+                    $path,
+                    $this->content(
+                        $module,
+                        $definition
+                    ),
+                    true
+                );
+            }
+
+            $results[] = [
+                'name' =>
+                $definition->controllerClass,
+
+                'path' => $relative,
+
+                'full_path' => $path,
+
+                'action' =>
+                $exists
+                    ? 'skipped'
+                    : 'created',
+            ];
+        }
+
+        foreach (
+            $definition->children
+            as $child
+        ) {
+            $this->generateNode(
+                $module,
+                $child,
+                $options,
+                $results
+            );
+        }
     }
 
-    protected function buildControllerContent($module, array $config): string
-    {
-        $namespace = $this->buildNamespace($module, $config);
-        $className = $config["controller_name"];
-        $routePath = $this->routeNameGenerator->generateRoutePath($config["route_parts"] ?? []);
-        $routeName = $this->routeNameGenerator->generateRouteName($config["route_parts"] ?? []);
-        
-        $middleware = $config["middleware"] ?? [];
-        $imports = $this->buildImports($module, $config);
-        $methods = $this->buildMethods($module, $config);
+    protected function previewNode(
+        $module,
+        MenuDefinition $definition,
+        array &$results
+    ): void {
+        if ($definition->hasController()) {
+            $path =
+                $this->files->getControllerPath(
+                    $module,
+                    $definition->controllerRelativePath()
+                );
 
-        $middlewareStr = !empty($middleware) ? 
-            implode(",", array_map(fn($m) => "{}", $middleware)) : "";
+            $results[] = [
+                'action' =>
+                $this->files->exists($path)
+                    ? 'keep'
+                    : 'create',
 
-        return <<<PHP
-<?php
+                'file' => $path,
 
-namespace {$namespace};
+                'type' => 'controller',
+            ];
+        }
 
-use Illuminate\Routing\Controller;
-use Illuminate\Http\Request;
-use Illuminate\Routing\Attributes\Route;
-use Illuminate\Routing\Attributes\Middleware;
-{$imports}
+        foreach (
+            $definition->children
+            as $child
+        ) {
+            $this->previewNode(
+                $module,
+                $child,
+                $results
+            );
+        }
+    }
 
-#[Route("{$routePath}", name: "{$routeName}")]
-#[Middleware([{$middlewareStr}])]
-class {$className} extends Controller
-{
-    #[Route("", name: "index")]
+    protected function content(
+        $module,
+        MenuDefinition $definition
+    ): string {
+        return $this->stubs->renderFile(
+            'controller.stub',
+            [
+                'NAMESPACE' =>
+                $this->namespace(
+                    $module,
+                    $definition
+                ),
+
+                'CLASS' =>
+                $definition->controllerClass,
+
+                'IMPORTS' =>
+                $this->imports(
+                    $module,
+                    $definition
+                ),
+
+                'METHODS' =>
+                $this->methods(
+                    $definition
+                ),
+            ]
+        );
+    }
+
+    protected function namespace(
+        $module,
+        MenuDefinition $definition
+    ): string {
+        $namespace =
+            "Modules\\{$module->getName()}"
+            . "\\App\\Http\\Controllers";
+
+        $relative =
+            $definition->controllerNamespace();
+
+        return $relative
+            ? $namespace . '\\' . $relative
+            : $namespace;
+    }
+
+    protected function imports(
+        $module,
+        MenuDefinition $definition
+    ): string {
+        $imports = [];
+
+        if (
+            in_array(
+                'store',
+                $definition->routeActions(),
+                true
+            ) ||
+            in_array(
+                'update',
+                $definition->routeActions(),
+                true
+            )
+        ) {
+            $imports[] =
+                'use '
+                . $this->requestNamespace(
+                    $module,
+                    $definition
+                )
+                . '\\'
+                . $definition->requestClass()
+                . ';';
+        }
+
+        if ($definition->model) {
+            $imports[] =
+                'use '
+                . $this->modelNamespace(
+                    $module
+                )
+                . '\\'
+                . $definition->modelClass()
+                . ';';
+        }
+
+        if ($definition->hasResource()) {
+            $imports[] =
+                'use '
+                . $this->resourceNamespace(
+                    $module,
+                    $definition
+                )
+                . '\\'
+                . $definition->resourceClass
+                . ';';
+        }
+
+        return implode(
+            PHP_EOL,
+            array_unique($imports)
+        );
+    }
+
+    protected function methods(
+        MenuDefinition $definition
+    ): string {
+        $methods = [];
+
+        foreach (
+            $definition->routeActions()
+            as $action
+        ) {
+            $methods[] =
+                match ($action) {
+                    'index' =>
+                    $this->indexMethod(
+                        $definition
+                    ),
+
+                    'store' =>
+                    $this->storeMethod(
+                        $definition
+                    ),
+
+                    'show' =>
+                    $this->showMethod(
+                        $definition
+                    ),
+
+                    'update' =>
+                    $this->updateMethod(
+                        $definition
+                    ),
+
+                    'destroy' =>
+                    $this->destroyMethod(
+                        $definition
+                    ),
+
+                    default => '',
+                };
+        }
+
+        return implode(
+            PHP_EOL . PHP_EOL,
+            array_filter($methods)
+        );
+    }
+
+    protected function indexMethod(
+        MenuDefinition $definition
+    ): string {
+        if (!$definition->model) {
+            return <<<PHP
     public function index()
     {
-        {$methods["index"]}
+        return response()->json([
+            'message' => 'Index not implemented',
+        ], 501);
     }
+PHP;
+        }
 
-    #[Route("", name: "store")]
-    public function store(Request \$request)
+        if ($definition->hasResource()) {
+            return <<<PHP
+    public function index()
     {
-        {$methods["store"]}
+        return {$definition->resourceClass}::collection(
+            {$definition->modelClass()}::paginate()
+        );
     }
+PHP;
+        }
 
-    #[Route("{id}", name: "show")]
-    public function show(\$id)
+        return <<<PHP
+    public function index()
     {
-        {$methods["show"]}
+        return {$definition->modelClass()}::paginate();
     }
-
-    #[Route("{id}", name: "update")]
-    public function update(Request \$request, \$id)
-    {
-        {$methods["update"]}
-    }
-
-    #[Route("{id}", name: "destroy")]
-    public function destroy(\$id)
-    {
-        {$methods["destroy"]}
-    }
-}
 PHP;
     }
 
-    protected function buildNamespace($module, array $config): string
-    {
-        $namespace = "Modules\\{$module->getName()}\\App\\Http\\Controllers";
-        if (!empty($config["parent"])) {
-            $namespace .= "\\" . Str::studly($config["parent"]);
+    protected function storeMethod(
+        MenuDefinition $definition
+    ): string {
+        if (!$definition->model) {
+            return <<<PHP
+    public function store(
+        {$definition->requestClass()} \$request
+    ) {
+        return response()->json([
+            'message' => 'Store not implemented',
+        ], 501);
+    }
+PHP;
         }
-        return $namespace;
+
+        $return =
+            $definition->hasResource()
+            ? 'return new '
+            . $definition->resourceClass
+            . '($item);'
+            : 'return $item;';
+
+        return <<<PHP
+    public function store(
+        {$definition->requestClass()} \$request
+    ) {
+        \$item = {$definition->modelClass()}::create(
+            \$request->validated()
+        );
+
+        {$return}
+    }
+PHP;
     }
 
-    protected function buildImports($module, array $config): string
-    {
-        $imports = [];
-        $modelClass = $config["model_name"] ?? $config["name"];
-        $moduleName = $module->getName();
-        
-        $modelPath = $module->getPath() . "/App/Models/{$modelClass}.php";
-        if (File::exists($modelPath)) {
-            $imports[] = "use Modules\\{$moduleName}\\App\\Models\\{$modelClass};";
+    protected function showMethod(
+        MenuDefinition $definition
+    ): string {
+        $parameter =
+            $definition->parameterName();
+
+        if (!$definition->model) {
+            return <<<PHP
+    public function show(
+        \${$parameter}
+    ) {
+        return response()->json([
+            'message' => 'Show not implemented',
+        ], 501);
+    }
+PHP;
         }
-        
-        $requestPath = $module->getPath() . "/App/Http/Requests/{$modelClass}Request.php";
-        if (File::exists($requestPath)) {
-            $imports[] = "use Modules\\{$moduleName}\\App\\Http\\Requests\\{$modelClass}Request;";
-        }
-        
-        $resourcePath = $module->getPath() . "/App/Http/Resources/{$modelClass}Resource.php";
-        if (File::exists($resourcePath)) {
-            $imports[] = "use Modules\\{$moduleName}\\App\\Http\\Resources\\{$modelClass}Resource;";
-        }
-        
-        return implode("\n", $imports);
+
+        $return =
+            $definition->hasResource()
+            ? 'return new '
+            . $definition->resourceClass
+            . "(\${$parameter});"
+            : "return \${$parameter};";
+
+        return <<<PHP
+    public function show(
+        {$definition->modelClass()} \${$parameter}
+    ) {
+        {$return}
+    }
+PHP;
     }
 
-    protected function buildMethods($module, array $config): array
-    {
-        $modelClass = $config["model_name"] ?? $config["name"];
-        $variableName = Str::camel($modelClass);
-        
-        $hasModel = File::exists($module->getPath() . "/App/Models/{$modelClass}.php");
-        $hasResource = File::exists($module->getPath() . "/App/Http/Resources/{$modelClass}Resource.php");
-        
-        $indexMethod = $hasModel ? 
-            "return {$modelClass}::paginate();" : 
-            "return response()->json([]);";
-        
-        $storeMethod = $hasModel ? 
-            "\$item = {$modelClass}::create(\$request->validated());\n        " . 
-            ($hasResource ? "return new {$modelClass}Resource(\$item);" : "return \$item;") :
-            "return response()->json([\"message\" => \"Store not implemented\"]);";
-        
-        $showMethod = $hasModel ?
-            ($hasResource ? "return new {$modelClass}Resource(\${$variableName});" : "return \${$variableName};") :
-            "return response()->json([\"message\" => \"Show not implemented\"]);";
-        
-        $updateMethod = $hasModel ?
-            "\${$variableName}->update(\$request->validated());\n        " . 
-            ($hasResource ? "return new {$modelClass}Resource(\${$variableName});" : "return \${$variableName};") :
-            "return response()->json([\"message\" => \"Update not implemented\"]);";
-        
-        $destroyMethod = $hasModel ?
-            "\${$variableName}->delete();\n        return response()->noContent();" :
-            "return response()->json([\"message\" => \"Destroy not implemented\"]);";
-        
-        return [
-            "index" => $indexMethod,
-            "store" => $storeMethod,
-            "show" => $showMethod,
-            "update" => $updateMethod,
-            "destroy" => $destroyMethod,
-        ];
+    protected function updateMethod(
+        MenuDefinition $definition
+    ): string {
+        $parameter =
+            $definition->parameterName();
+
+        if (!$definition->model) {
+            return <<<PHP
+    public function update(
+        {$definition->requestClass()} \$request,
+        \${$parameter}
+    ) {
+        return response()->json([
+            'message' => 'Update not implemented',
+        ], 501);
+    }
+PHP;
+        }
+
+        $return =
+            $definition->hasResource()
+            ? 'return new '
+            . $definition->resourceClass
+            . "(\${$parameter});"
+            : "return \${$parameter};";
+
+        return <<<PHP
+    public function update(
+        {$definition->requestClass()} \$request,
+        {$definition->modelClass()} \${$parameter}
+    ) {
+        \${$parameter}->update(
+            \$request->validated()
+        );
+
+        {$return}
+    }
+PHP;
     }
 
-    protected function getControllerPath($module, string $path): string
-    {
-        return $module->getPath() . "/App/Http/Controllers/" . $path . ".php";
+    protected function destroyMethod(
+        MenuDefinition $definition
+    ): string {
+        $parameter =
+            $definition->parameterName();
+
+        if (!$definition->model) {
+            return <<<PHP
+    public function destroy(
+        \${$parameter}
+    ) {
+        return response()->json([
+            'message' => 'Destroy not implemented',
+        ], 501);
+    }
+PHP;
+        }
+
+        return <<<PHP
+    public function destroy(
+        {$definition->modelClass()} \${$parameter}
+    ) {
+        \${$parameter}->delete();
+
+        return response()->noContent();
+    }
+PHP;
     }
 
-    protected function loadExistingControllers($module): void
-    {
-        $path = $module->getPath() . "/App/Http/Controllers";
-        $this->existingControllers = $this->fileHandler->findPhpFiles($path);
+    protected function requestNamespace(
+        $module,
+        MenuDefinition $definition
+    ): string {
+        $namespace =
+            "Modules\\{$module->getName()}"
+            . "\\App\\Http\\Requests";
+
+        $relative =
+            $definition->controllerNamespace();
+
+        return $relative
+            ? $namespace . '\\' . $relative
+            : $namespace;
+    }
+
+    protected function modelNamespace(
+        $module
+    ): string {
+        return
+            "Modules\\{$module->getName()}"
+            . "\\App\\Models";
+    }
+
+    protected function resourceNamespace(
+        $module,
+        MenuDefinition $definition
+    ): string {
+        $namespace =
+            "Modules\\{$module->getName()}"
+            . "\\App\\Http\\Resources";
+
+        $relative =
+            $definition->resourceNamespace();
+
+        return $relative
+            ? $namespace . '\\' . $relative
+            : $namespace;
     }
 }

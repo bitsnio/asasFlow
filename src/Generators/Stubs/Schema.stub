@@ -1,0 +1,10 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "{{ NAME }}",
+    "title": "{{ TITLE }}",
+    "description": "{{ DESCRIPTION }}",
+    "type": "object",
+    "properties": {{ PROPERTIES }},
+    "required": {{ REQUIRED }},
+    "additionalProperties": {{ ADDITIONAL_PROPERTIES }}
+}

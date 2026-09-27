@@ -1,6 +1,6 @@
 <?php
 
-namespace Bitsnio\AsasFlow\Console\Commands\ControllerCommands\Contracts;
+namespace Bitsnio\AsasFlow\Foundation\Contracts;
 
 interface GeneratorInterface
 {

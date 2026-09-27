@@ -6,6 +6,8 @@ use Bitsnio\AsasFlow\Console\Commands\ModuleCommands\ModuleMakeCommand;
 use Illuminate\Support\Collection;
 use Bitsnio\AsasFlow\Console\Commands\Install;
 use Bitsnio\AsasFlow\Console\Commands\ControllerCommands\GenerateControllersCommand;
+use Bitsnio\AsasFlow\console\Commands\ControllerCommands\GenerateFromSchemaCommand;
+
 use Bitsnio\AsasFlow\Console\Commands\UpdateDocs;
 use Bitsnio\AsasFlow\Console\Commands\InstallTests;
 
@@ -19,6 +21,7 @@ class ConsoleServiceProvider
             InstallTests::class,
             UpdateDocs::class,
             GenerateControllersCommand::class,
+            GenerateFromSchemaCommand::class,
             // Module overrides
             ModuleMakeCommand::class,
         ]);

@@ -1,0 +1,16 @@
+<?php
+
+namespace {{ NAMESPACE }};
+
+use Illuminate\Http\Request;
+use Illuminate\Http\Resources\Json\JsonResource;
+
+class {{ CLASS }} extends JsonResource
+{
+    public function toArray(Request $request): array
+    {
+        // @asasflow:fields:start
+        return parent::toArray($request);
+        // @asasflow:fields:end
+    }
+}

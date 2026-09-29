@@ -2,8 +2,10 @@
 
 namespace Bitsnio\AsasFlow\Generators\Menu;
 
+
 use Illuminate\Support\Str;
 use InvalidArgumentException;
+use Bitsnio\AsasFlow\Foundation\Support\MenuDefinition;
 
 class MenuBuilder
 {

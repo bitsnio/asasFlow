@@ -4,7 +4,7 @@ namespace Bitsnio\AsasFlow\Generators\Model;
 
 use Bitsnio\AsasFlow\Foundation\Support\FileHandler;
 use Bitsnio\AsasFlow\Foundation\Support\GeneratedBlock;
-use Bitsnio\AsasFlow\Generators\Menu\MenuDefinition;
+use Bitsnio\AsasFlow\Foundation\Support\MenuDefinition;
 use Bitsnio\AsasFlow\Generators\Schema\SchemaDefinition;
 
 class ModelGenerator

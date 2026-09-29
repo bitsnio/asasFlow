@@ -5,7 +5,7 @@ namespace Bitsnio\AsasFlow\Generators\Request;
 use Bitsnio\AsasFlow\Foundation\Contracts\GeneratorInterface;
 use Bitsnio\AsasFlow\Foundation\Support\FileHandler;
 use Bitsnio\AsasFlow\Foundation\Support\GeneratedBlock;
-use Bitsnio\AsasFlow\Generators\Menu\MenuDefinition;
+use Bitsnio\AsasFlow\Foundation\Support\MenuDefinition;
 use Bitsnio\AsasFlow\Generators\Schema\SchemaDefinition;
 
 class RequestGenerator implements GeneratorInterface
@@ -56,7 +56,7 @@ class RequestGenerator implements GeneratorInterface
         MenuDefinition $definition,
         SchemaDefinition $schema
     ): array {
-        if (!$definition->resourceClass()) {
+        if (!$definition->hasResource()) {
             return [
                 'action' => 'skipped',
                 'reason' => 'resource-disabled',
@@ -225,7 +225,7 @@ class RequestGenerator implements GeneratorInterface
         MenuDefinition $definition
     ): string {
         $namespace =
-            "Modules\\{$module->getName()}\\App\\Http\\Requests";
+            "Modules\\{$module->getName()}\\Http\\Requests";
 
         $relative =
             $definition->controllerNamespace();

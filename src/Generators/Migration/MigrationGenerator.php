@@ -3,7 +3,7 @@
 namespace Bitsnio\AsasFlow\Generators\Migration;
 
 use Bitsnio\AsasFlow\Foundation\Support\FileHandler;
-use Bitsnio\AsasFlow\Generators\Menu\MenuDefinition;
+use Bitsnio\AsasFlow\Foundation\Support\MenuDefinition;
 use Bitsnio\AsasFlow\Generators\Schema\SchemaDefinition;
 use Illuminate\Support\Str;
 

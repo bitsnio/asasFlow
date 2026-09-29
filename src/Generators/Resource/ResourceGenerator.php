@@ -5,7 +5,7 @@ namespace Bitsnio\AsasFlow\Generators\Resource;
 use Bitsnio\AsasFlow\Foundation\Contracts\GeneratorInterface;
 use Bitsnio\AsasFlow\Foundation\Support\FileHandler;
 use Bitsnio\AsasFlow\Foundation\Support\GeneratedBlock;
-use Bitsnio\AsasFlow\Generators\Menu\MenuDefinition;
+use Bitsnio\AsasFlow\Foundation\Support\MenuDefinition;
 use Bitsnio\AsasFlow\Generators\Schema\SchemaDefinition;
 
 class ResourceGenerator implements GeneratorInterface
@@ -56,7 +56,7 @@ class ResourceGenerator implements GeneratorInterface
         MenuDefinition $definition,
         SchemaDefinition $schema
     ): array {
-        if (!$definition->resourceClass()) {
+        if (!$definition->hasResource()) {
             return [
                 'action' => 'skipped',
             ];
@@ -106,7 +106,7 @@ class ResourceGenerator implements GeneratorInterface
         array $options,
         array &$results
     ): void {
-        if ($definition->resourceClass()) {
+        if ($definition->hasResource()) {
             $relative =
                 $definition->resourceRelativePath();
 
@@ -132,7 +132,7 @@ class ResourceGenerator implements GeneratorInterface
 
             $results[] = [
                 'name' =>
-                $definition->resourceClass(),
+                $definition->resourceClass,
 
                 'path' => $relative,
 
@@ -160,7 +160,7 @@ class ResourceGenerator implements GeneratorInterface
         MenuDefinition $definition,
         array &$results
     ): void {
-        if ($definition->resourceClass()) {
+        if ($definition->hasResource()) {
             $path =
                 $this->files->getResourcePath(
                     $module,
@@ -193,7 +193,7 @@ class ResourceGenerator implements GeneratorInterface
         MenuDefinition $definition
     ): string {
         $namespace =
-            "Modules\\{$module->getName()}\\App\\Http\\Resources";
+            "Modules\\{$module->getName()}\\Http\\Resources";
 
         $relative =
             $definition->resourceNamespace();
@@ -211,7 +211,7 @@ namespace {$namespace};
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
-class {$definition->resourceClass()} extends JsonResource
+class {$definition->resourceClass} extends JsonResource
 {
     public function toArray(Request \$request): array
     {

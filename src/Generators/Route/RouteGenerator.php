@@ -4,7 +4,7 @@ namespace Bitsnio\AsasFlow\Generators\Route;
 
 use Bitsnio\AsasFlow\Foundation\Contracts\GeneratorInterface;
 use Bitsnio\AsasFlow\Foundation\Support\FileHandler;
-use Bitsnio\AsasFlow\Generators\Menu\MenuDefinition;
+use Bitsnio\AsasFlow\Foundation\Support\MenuDefinition;
 use Illuminate\Support\Str;
 
 class RouteGenerator
@@ -281,7 +281,7 @@ implements GeneratorInterface
     ): string {
         $namespace =
             "Modules\\{$module->getName()}"
-            . "\\App\\Http\\Controllers";
+            . "\\Http\\Controllers";
 
         $relative =
             $definition->controllerNamespace();

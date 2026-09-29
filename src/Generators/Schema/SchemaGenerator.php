@@ -5,7 +5,7 @@ namespace Bitsnio\AsasFlow\Generators\Schema;
 use Bitsnio\AsasFlow\Foundation\Contracts\GeneratorInterface;
 use Bitsnio\AsasFlow\Foundation\Support\FileHandler;
 use Bitsnio\AsasFlow\Foundation\Support\StubRenderer;
-use Bitsnio\AsasFlow\Generators\Menu\MenuDefinition;
+use Bitsnio\AsasFlow\Foundation\Support\MenuDefinition;
 use Illuminate\Support\Str;
 
 class SchemaGenerator implements GeneratorInterface

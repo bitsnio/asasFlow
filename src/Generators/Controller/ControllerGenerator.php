@@ -6,7 +6,7 @@ use Bitsnio\AsasFlow\Foundation\Contracts\GeneratorInterface;
 use Bitsnio\AsasFlow\Foundation\Support\FileHandler;
 use Bitsnio\AsasFlow\Foundation\Support\GeneratedBlock;
 use Bitsnio\AsasFlow\Foundation\Support\StubRenderer;
-use Bitsnio\AsasFlow\Generators\Menu\MenuDefinition;
+use Bitsnio\AsasFlow\Foundation\Support\MenuDefinition;
 use Bitsnio\AsasFlow\Generators\Schema\SchemaDefinition;
 
 class ControllerGenerator implements GeneratorInterface
@@ -236,7 +236,7 @@ class ControllerGenerator implements GeneratorInterface
     ): string {
         $namespace =
             "Modules\\{$module->getName()}"
-            . "\\App\\Http\\Controllers";
+            . "\\Http\\Controllers";
 
         $relative =
             $definition->controllerNamespace();
@@ -527,7 +527,7 @@ PHP;
     ): string {
         $namespace =
             "Modules\\{$module->getName()}"
-            . "\\App\\Http\\Requests";
+            . "\\Http\\Requests";
 
         $relative =
             $definition->controllerNamespace();
@@ -542,7 +542,7 @@ PHP;
     ): string {
         return
             "Modules\\{$module->getName()}"
-            . "\\App\\Models";
+            . "\\Models";
     }
 
     protected function resourceNamespace(
@@ -551,7 +551,7 @@ PHP;
     ): string {
         $namespace =
             "Modules\\{$module->getName()}"
-            . "\\App\\Http\\Resources";
+            . "\\Http\\Resources";
 
         $relative =
             $definition->resourceNamespace();

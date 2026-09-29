@@ -3,7 +3,7 @@
 namespace Bitsnio\AsasFlow\Generators\Schema;
 
 use Bitsnio\AsasFlow\Generators\Controller\ControllerGenerator;
-use Bitsnio\AsasFlow\Generators\Menu\MenuDefinition;
+use Bitsnio\AsasFlow\Foundation\Support\MenuDefinition;
 use Bitsnio\AsasFlow\Generators\Migration\MigrationGenerator;
 use Bitsnio\AsasFlow\Generators\Model\ModelGenerator;
 use Bitsnio\AsasFlow\Generators\Request\RequestGenerator;

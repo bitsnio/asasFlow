@@ -1,0 +1,128 @@
+<?php
+
+return [
+    /*
+    |--------------------------------------------------------------------------
+    | Module
+    |--------------------------------------------------------------------------
+    */
+
+    'module' => [
+        'name' => '{{ MODULE_NAME }}',
+        'title' => '{{ TITLE }}',
+
+        'middleware' => [
+            'api',
+            'auth:api',
+            'asasflow.permission',
+        ],
+
+        'children' => [
+
+            /*
+            |--------------------------------------------------------------------------
+            | GROUP
+            |--------------------------------------------------------------------------
+            |
+            | "type" is not required here.
+            |
+            | Any menu item without a type automatically becomes a group.
+            |
+            */
+
+            [
+                'name' => 'organization',
+                'title' => 'Organization',
+
+                'children' => [
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | RESOURCE
+                    |--------------------------------------------------------------------------
+                    |
+                    | Generates apiResource CRUD routes.
+                    |
+                    */
+
+                    [
+                        'name' => 'companies',
+                        'title' => 'Companies',
+                        'type' => 'resource',
+
+                        'model' => true,
+
+                        /*
+                        | Optional. Full CRUD is the default.
+                        */
+
+                        // 'routes' => [
+                        //     'index',
+                        //     'show',
+                        //     'store',
+                        //     'update',
+                        //     'destroy',
+                        // ],
+
+                        /*
+                        | Optional permission descriptions.
+                        */
+
+                        'permissions' => [
+                            'view' => 'View companies',
+                            'create' => 'Create companies',
+                            'update' => 'Update companies',
+                            'delete' => 'Delete companies',
+                        ],
+
+                        'children' => [
+
+                            /*
+                            |--------------------------------------------------------------------------
+                            | ACTION
+                            |--------------------------------------------------------------------------
+                            |
+                            | Custom endpoint.
+                            |
+                            | No controller_method is required.
+                            | The generated controller can be implemented later.
+                            |
+                            */
+
+                            [
+                                'name' => 'approve',
+                                'title' => 'Approve Company',
+                                'type' => 'action',
+
+                                'method' => 'POST',
+                                'path' => '{company}/approve',
+
+                                'controller' => [
+                                    'class' => 'CompanyActionController',
+                                ],
+
+                                'permissions' => [
+                                    'execute' => 'Approve companies',
+                                ],
+                            ],
+
+                        ],
+                    ],
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | ANOTHER RESOURCE
+                    |--------------------------------------------------------------------------
+                    */
+
+                    [
+                        'name' => 'sites',
+                        'title' => 'Sites',
+                        'type' => 'resource',
+                        'model' => true,
+                    ],
+                ],
+            ],
+        ],
+    ],
+];

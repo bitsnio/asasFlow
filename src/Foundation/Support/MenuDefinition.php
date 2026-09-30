@@ -11,7 +11,7 @@ class MenuDefinition
         public readonly string $name,
         public readonly string $title,
         public readonly array $path,
-        public readonly string $type,
+        public readonly string $type = 'group',
         public readonly array $middleware = [],
         public readonly bool $model = false,
         public readonly array $routes = [],
@@ -23,6 +23,12 @@ class MenuDefinition
         public readonly array $config = [],
     ) {}
 
+    /*
+    |--------------------------------------------------------------------------
+    | Type
+    |--------------------------------------------------------------------------
+    */
+
     public function isGroup(): bool
     {
         return $this->type === 'group';
@@ -32,6 +38,17 @@ class MenuDefinition
     {
         return $this->type === 'resource';
     }
+
+    public function isAction(): bool
+    {
+        return $this->type === 'action';
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Generated Components
+    |--------------------------------------------------------------------------
+    */
 
     public function hasController(): bool
     {
@@ -43,23 +60,12 @@ class MenuDefinition
         return $this->resourceClass !== null;
     }
 
-    public function routePath(): string
-    {
-        return implode(
-            '/',
-            array_map(
-                [Str::class, 'kebab'],
-                $this->path
-            )
-        );
-    }
+    /*
+    |--------------------------------------------------------------------------
+    | Menu / Permission Path
+    |--------------------------------------------------------------------------
+    */
 
-    /**
-     * Canonical permission/resource identifier.
-     *
-     * Example:
-     * admin.company-management.companies
-     */
     public function permissionKey(): string
     {
         return implode(
@@ -71,24 +77,74 @@ class MenuDefinition
         );
     }
 
-    /**
-     * Canonical route name.
-     *
-     * Example:
-     * admin.company-management.companies.index
-     */
-    public function routeName(string $action): string
+    public function routePath(): string
     {
-        return $this->permissionKey()
-            . '.'
-            . Str::kebab($action);
+        $segments = array_map(
+            [Str::class, 'kebab'],
+            $this->path
+        );
+
+        if ($this->isAction()) {
+            array_pop($segments);
+
+            $actionPath = $this->actionPath();
+
+            if ($actionPath !== '') {
+                $segments[] = $actionPath;
+            }
+        }
+
+        return implode('/', $segments);
     }
+
+    public function routeSegment(): string
+    {
+        return $this->isAction()
+            ? $this->actionPath()
+            : Str::kebab($this->name);
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Action
+    |--------------------------------------------------------------------------
+    */
+
+    public function actionMethod(): ?string
+    {
+        if (!$this->isAction()) {
+            return null;
+        }
+
+        return strtoupper(
+            $this->config['method'] ?? 'POST'
+        );
+    }
+
+    public function actionPath(): string
+    {
+        if (!$this->isAction()) {
+            return Str::kebab($this->name);
+        }
+
+        return trim(
+            (string) (
+                $this->config['path']
+                ?? Str::kebab($this->name)
+            ),
+            '/'
+        );
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Controller / Resource Namespace
+    |--------------------------------------------------------------------------
+    */
 
     public function controllerNamespace(): string
     {
-        return $this->relativeNamespace(
-            array_slice($this->path, 1, -1)
-        );
+        return $this->relativeNamespace($this->path);
     }
 
     public function controllerRelativePath(): string
@@ -103,9 +159,7 @@ class MenuDefinition
 
     public function resourceNamespace(): string
     {
-        return $this->relativeNamespace(
-            array_slice($this->path, 1, -1)
-        );
+        return $this->relativeNamespace($this->path);
     }
 
     public function resourceRelativePath(): string
@@ -130,47 +184,43 @@ class MenuDefinition
         );
     }
 
+    /*
+    |--------------------------------------------------------------------------
+    | Model / Request
+    |--------------------------------------------------------------------------
+    */
+
     public function modelClass(): string
     {
         $model = $this->config['model'] ?? null;
 
-        if (
-            is_array($model) &&
-            !empty($model['class'])
-        ) {
-            return $model['class'];
+        if (is_array($model)) {
+            return $model['class']
+                ?? Str::studly($this->name);
         }
 
-        if (
-            isset($this->config['model_name']) &&
-            is_string($this->config['model_name'])
-        ) {
-            return $this->config['model_name'];
-        }
-
-        return Str::studly($this->name);
+        return $this->config['model_name']
+            ?? Str::studly($this->name);
     }
 
     public function requestClass(): string
     {
         $request = $this->config['request'] ?? null;
 
-        if (
-            is_array($request) &&
-            !empty($request['class'])
-        ) {
-            return $request['class'];
+        if (is_array($request)) {
+            return $request['class']
+                ?? $this->modelClass() . 'Request';
         }
 
-        if (
-            isset($this->config['request_name']) &&
-            is_string($this->config['request_name'])
-        ) {
-            return $this->config['request_name'];
-        }
-
-        return $this->modelClass() . 'Request';
+        return $this->config['request_name']
+            ?? $this->modelClass() . 'Request';
     }
+
+    /*
+    |--------------------------------------------------------------------------
+    | CRUD Routes
+    |--------------------------------------------------------------------------
+    */
 
     public function routeActions(): array
     {
@@ -183,18 +233,11 @@ class MenuDefinition
         return match (
             $this->config['routes_type'] ?? 'full'
         ) {
-            'index',
-            'list' => ['index'],
-
-            'create',
-            'store' => ['store'],
-
+            'index', 'list' => ['index'],
+            'create', 'store' => ['store'],
             'show' => ['show'],
-
             'update' => ['update'],
-
-            'delete',
-            'destroy' => ['destroy'],
+            'delete', 'destroy' => ['destroy'],
 
             default => [
                 'index',
@@ -211,25 +254,5 @@ class MenuDefinition
         return Str::camel(
             $this->modelClass()
         );
-    }
-
-    /**
-     * Return the configured permission actions.
-     *
-     * If no custom permissions are configured,
-     * the normal CRUD permissions are returned.
-     */
-    public function permissionActions(): array
-    {
-        if (!empty($this->permissions)) {
-            return array_keys($this->permissions);
-        }
-
-        return [
-            'view',
-            'create',
-            'update',
-            'delete',
-        ];
     }
 }

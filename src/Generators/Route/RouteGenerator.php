@@ -7,12 +7,10 @@ use Bitsnio\AsasFlow\Foundation\Support\FileHandler;
 use Bitsnio\AsasFlow\Foundation\Support\MenuDefinition;
 use Illuminate\Support\Str;
 
-class RouteGenerator
-implements GeneratorInterface
+class RouteGenerator implements GeneratorInterface
 {
     public function __construct(
         protected FileHandler $files,
-        protected RouteNameGenerator $routeNameGenerator,
     ) {}
 
     public function generate(
@@ -20,11 +18,10 @@ implements GeneratorInterface
         array $definitions,
         array $options = []
     ): array {
-        $path =
-            $this->files->getRoutesPath($module);
-
-        $exists =
-            $this->files->exists($path);
+        $routeFile =
+            $this->files->getRoutesPath(
+                $module
+            );
 
         $content =
             $this->buildRouteFile(
@@ -33,16 +30,17 @@ implements GeneratorInterface
             );
 
         $this->files->writeFile(
-            $path,
+            $routeFile,
             $content,
             true
         );
 
-        return [[
-            'path' => $path,
-            'action' =>
-            $exists ? 'updated' : 'created',
-        ]];
+        return [
+            [
+                'path' => $routeFile,
+                'action' => 'created/updated',
+            ],
+        ];
     }
 
     public function preview(
@@ -50,67 +48,78 @@ implements GeneratorInterface
         array $definitions,
         array $options = []
     ): array {
-        $path =
-            $this->files->getRoutesPath($module);
+        $routeFile =
+            $this->files->getRoutesPath(
+                $module
+            );
 
-        return [[
-            'action' =>
-            $this->files->exists($path)
-                ? 'update'
-                : 'create',
-            'file' => $path,
-            'type' => 'routes',
-        ]];
+        return [
+            [
+                'action' =>
+                $this->files->exists($routeFile)
+                    ? 'update'
+                    : 'create',
+
+                'file' => $routeFile,
+                'type' => 'routes',
+            ],
+        ];
     }
 
     protected function buildRouteFile(
         $module,
         array $definitions
     ): string {
+        $moduleName =
+            $module->getName();
+
         $controllers =
             $this->collectControllers(
                 $definitions
             );
 
         $content =
-            "<?php\n\n"
-            . "use Illuminate\\Support\\Facades\\Route;\n";
+            "<?php\n\n";
+
+        $content .=
+            "use Illuminate\\Support\\Facades\\Route;\n";
 
         foreach ($controllers as $definition) {
             $namespace =
                 $this->controllerNamespace(
-                    $module,
+                    $moduleName,
                     $definition
                 );
 
             $content .=
                 "use {$namespace}\\"
-                . "{$definition->controllerClass};\n";
+                . $definition->controllerClass
+                . ";\n";
         }
 
-        $content .= "\n";
+        if (!empty($controllers)) {
+            $content .= "\n";
+        }
 
         foreach ($definitions as $definition) {
-            $content .= $this->buildNode(
-                $definition,
-                [],
-                0
-            );
+            $content .=
+                $this->buildNode(
+                    $definition,
+                    [],
+                    0
+                );
         }
 
-        return rtrim($content) . "\n";
+        return $content;
     }
 
     protected function buildNode(
         MenuDefinition $definition,
-        array $parentMiddleware = [],
-        int $level = 0
+        array $parentMiddleware,
+        int $level
     ): string {
         $indent =
             str_repeat('    ', $level);
-
-        $segment =
-            Str::kebab($definition->name);
 
         $additionalMiddleware =
             array_values(
@@ -122,19 +131,44 @@ implements GeneratorInterface
 
         $content = '';
 
+        /*
+         * Resource
+         */
         if (
             $definition->isResource() &&
             $definition->controllerClass
         ) {
-            $content .= $this->resourceRoute(
-                $definition,
-                $segment,
-                $level,
-                $additionalMiddleware
-            );
+            $content .=
+                $this->buildResourceRoute(
+                    $definition,
+                    $additionalMiddleware,
+                    $level
+                );
         }
 
-        if (!empty($definition->children)) {
+        /*
+         * Action
+         */
+        if ($definition->isAction()) {
+            $content .=
+                $this->buildActionRoute(
+                    $definition,
+                    $additionalMiddleware,
+                    $level
+                );
+        }
+
+        /*
+         * Children / group
+         */
+        if (
+            !empty($definition->children)
+        ) {
+            $segment =
+                Str::kebab(
+                    $definition->name
+                );
+
             $content .=
                 $indent
                 . "Route::prefix('{$segment}')";
@@ -147,7 +181,7 @@ implements GeneratorInterface
                     . $this->phpArray(
                         $additionalMiddleware
                     )
-                    . ')';
+                    . ")";
             }
 
             $content .=
@@ -159,11 +193,12 @@ implements GeneratorInterface
                 $definition->children
                 as $child
             ) {
-                $content .= $this->buildNode(
-                    $child,
-                    $definition->middleware,
-                    $level + 1
-                );
+                $content .=
+                    $this->buildNode(
+                        $child,
+                        $definition->middleware,
+                        $level + 1
+                    );
             }
 
             $content .=
@@ -174,11 +209,10 @@ implements GeneratorInterface
         return $content;
     }
 
-    protected function resourceRoute(
+    protected function buildResourceRoute(
         MenuDefinition $definition,
-        string $segment,
-        int $level,
-        array $additionalMiddleware
+        array $middleware,
+        int $level
     ): string {
         $indent =
             str_repeat('    ', $level);
@@ -188,8 +222,13 @@ implements GeneratorInterface
 
         $resource =
             "Route::apiResource("
-            . "'{$segment}', "
-            . "{$definition->controllerClass}::class)";
+            . "'"
+            . Str::kebab(
+                $definition->name
+            )
+            . "', "
+            . $definition->controllerClass
+            . "::class)";
 
         $allActions = [
             'index',
@@ -201,20 +240,14 @@ implements GeneratorInterface
 
         if ($actions !== $allActions) {
             $resource .=
-                '->only('
+                "->only("
                 . $this->phpArray($actions)
-                . ')';
+                . ")";
         }
 
-        $resource .=
-            '->names('
-            . $this->routeNames(
-                $definition,
-                $actions
-            )
-            . ');';
+        $resource .= ";";
 
-        if (!$additionalMiddleware) {
+        if (!$middleware) {
             return
                 $indent
                 . $resource
@@ -223,35 +256,80 @@ implements GeneratorInterface
 
         return
             $indent
-            . 'Route::middleware('
-            . $this->phpArray(
-                $additionalMiddleware
-            )
+            . "Route::middleware("
+            . $this->phpArray($middleware)
             . ")->group(function () {\n"
             . $indent
-            . '    '
+            . "    "
             . $resource
             . "\n"
             . $indent
             . "});\n\n";
     }
 
-    protected function routeNames(
+    protected function buildActionRoute(
         MenuDefinition $definition,
-        array $actions
+        array $middleware,
+        int $level
     ): string {
-        $names = [];
+        $indent =
+            str_repeat('    ', $level);
 
-        foreach ($actions as $action) {
-            $names[$action] =
-                $this->routeNameGenerator
-                ->generateRouteName(
-                    $definition->path,
-                    $action
-                );
+        $method =
+            strtolower(
+                $definition->actionMethod()
+            );
+
+        $path =
+            $definition->actionPath();
+
+        $controller =
+            $definition->controllerClass;
+
+        if (!$controller) {
+            throw new \InvalidArgumentException(
+                "Action ["
+                    . $definition->permissionKey()
+                    . "] requires a controller."
+            );
         }
 
-        return $this->phpArray($names);
+        $route =
+            "Route::{$method}("
+            . "'{$path}', "
+            . $controller
+            . "::class)";
+
+        if ($definition->config['controller_method'] ?? null) {
+            $route =
+                "Route::{$method}("
+                . "'{$path}', ["
+                . $controller
+                . "::class, '"
+                . $definition->config['controller_method']
+                . "'])";
+        }
+
+        $route .= ";";
+
+        if (!$middleware) {
+            return
+                $indent
+                . $route
+                . "\n\n";
+        }
+
+        return
+            $indent
+            . "Route::middleware("
+            . $this->phpArray($middleware)
+            . ")->group(function () {\n"
+            . $indent
+            . "    "
+            . $route
+            . "\n"
+            . $indent
+            . "});\n\n";
     }
 
     protected function collectControllers(
@@ -276,12 +354,12 @@ implements GeneratorInterface
     }
 
     protected function controllerNamespace(
-        $module,
+        string $moduleName,
         MenuDefinition $definition
     ): string {
         $namespace =
-            "Modules\\{$module->getName()}"
-            . "\\Http\\Controllers";
+            "Modules\\{$moduleName}"
+            . "\\App\\Http\\Controllers";
 
         $relative =
             $definition->controllerNamespace();
@@ -294,22 +372,9 @@ implements GeneratorInterface
     protected function phpArray(
         array $values
     ): string {
-        $parts = [];
-
-        foreach ($values as $key => $value) {
-            if (is_int($key)) {
-                $parts[] =
-                    var_export($value, true);
-            } else {
-                $parts[] =
-                    var_export($key, true)
-                    . ' => '
-                    . var_export($value, true);
-            }
-        }
-
-        return '['
-            . implode(', ', $parts)
-            . ']';
+        return var_export(
+            array_values($values),
+            true
+        );
     }
 }

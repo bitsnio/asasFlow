@@ -2,31 +2,40 @@
 
 namespace Bitsnio\AsasFlow\Generators\Menu;
 
-
+use Bitsnio\AsasFlow\Foundation\Support\MenuDefinition;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
-use Bitsnio\AsasFlow\Foundation\Support\MenuDefinition;
 
 class MenuBuilder
 {
+    protected const TYPES = [
+        'resource',
+        'action',
+    ];
+
+    protected const ACTION_METHODS = [
+        'GET',
+        'POST',
+        'PUT',
+        'PATCH',
+        'DELETE',
+    ];
+
     public function build(array $menu): array
     {
         $module = $menu['module'] ?? null;
 
         if (!is_array($module)) {
             throw new InvalidArgumentException(
-                'Missing module configuration.'
+                'Menu configuration must contain a module array.'
             );
         }
 
         $moduleName = $module['name'] ?? null;
 
-        if (
-            !is_string($moduleName) ||
-            trim($moduleName) === ''
-        ) {
+        if (!$moduleName) {
             throw new InvalidArgumentException(
-                'Module name is required.'
+                'Menu module name is required.'
             );
         }
 
@@ -55,20 +64,6 @@ class MenuBuilder
         return $flat;
     }
 
-    protected function flattenNode(
-        MenuDefinition $definition,
-        array &$flat
-    ): void {
-        $flat[$definition->permissionKey()] = $definition;
-
-        foreach ($definition->children as $child) {
-            $this->flattenNode(
-                $child,
-                $flat
-            );
-        }
-    }
-
     protected function buildNode(
         array $config,
         string $moduleName,
@@ -77,12 +72,9 @@ class MenuBuilder
     ): MenuDefinition {
         $name = $config['name'] ?? null;
 
-        if (
-            !is_string($name) ||
-            trim($name) === ''
-        ) {
+        if (!$name) {
             throw new InvalidArgumentException(
-                'Every menu node must contain a non-empty name.'
+                'Every menu item must have a name.'
             );
         }
 
@@ -91,33 +83,108 @@ class MenuBuilder
             $name,
         ];
 
+        /*
+        |--------------------------------------------------------------------------
+        | Type
+        |--------------------------------------------------------------------------
+        |
+        | No type means group.
+        |
+        */
+
+        $type = $config['type'] ?? 'group';
+
+        if (!in_array(
+            $type,
+            ['group', ...self::TYPES],
+            true
+        )) {
+            throw new InvalidArgumentException(
+                "Invalid menu type [{$type}] "
+                    . "for [{$name}]. "
+                    . "Allowed types: resource, action."
+            );
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | Middleware
+        |--------------------------------------------------------------------------
+        */
+
         $middleware = $this->middleware(
             $inheritedMiddleware,
             $config['middleware'] ?? [],
-            empty($inheritedMiddleware) &&
-                !isset($config['middleware'])
+            empty($inheritedMiddleware)
+                && !isset($config['middleware'])
                 ? ['api']
                 : []
         );
 
-        $type = $config['type']
-            ?? (
-                !empty($config['children'])
-                ? 'group'
-                : 'resource'
-            );
+        /*
+        |--------------------------------------------------------------------------
+        | Children
+        |--------------------------------------------------------------------------
+        */
 
-        if (!in_array(
-            $type,
-            ['group', 'resource'],
-            true
-        )) {
-            throw new InvalidArgumentException(
-                "Invalid type [{$type}] for ["
-                    . implode('.', $path)
-                    . ']. Use group or resource.'
+        $children = [];
+
+        foreach (
+            ($config['children'] ?? [])
+            as $child
+        ) {
+            if (!is_array($child)) {
+                continue;
+            }
+
+            $children[] = $this->buildNode(
+                $child,
+                $moduleName,
+                $path,
+                $middleware
             );
         }
+
+        /*
+        |--------------------------------------------------------------------------
+        | Action Validation
+        |--------------------------------------------------------------------------
+        */
+
+        if ($type === 'action') {
+            if (!empty($children)) {
+                throw new InvalidArgumentException(
+                    "Action [{$name}] "
+                        . "cannot contain children."
+                );
+            }
+
+            $method = strtoupper(
+                $config['method'] ?? 'POST'
+            );
+
+            if (!in_array(
+                $method,
+                self::ACTION_METHODS,
+                true
+            )) {
+                throw new InvalidArgumentException(
+                    "Invalid method [{$method}] "
+                        . "for action [{$name}]. "
+                        . "Allowed methods: "
+                        . implode(
+                            ', ',
+                            self::ACTION_METHODS
+                        )
+                );
+            }
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | Component Defaults
+        |--------------------------------------------------------------------------
+        */
 
         $controllerClass =
             $this->controllerClass(
@@ -131,31 +198,20 @@ class MenuBuilder
                 $type
             );
 
+        /*
+        |--------------------------------------------------------------------------
+        | Schema
+        |--------------------------------------------------------------------------
+        */
+
         $schemaName = null;
 
-        if (($config['model'] ?? false) === true) {
+        if (
+            ($config['model'] ?? false) === true
+        ) {
             $schemaName =
                 $config['schema']['name']
                 ?? Str::studly($name);
-        }
-
-        $children = [];
-
-        foreach ($config['children'] ?? [] as $child) {
-            if (!is_array($child)) {
-                throw new InvalidArgumentException(
-                    'Every children entry must be an array at ['
-                        . implode('.', $path)
-                        . '].'
-                );
-            }
-
-            $children[] = $this->buildNode(
-                $child,
-                $moduleName,
-                $path,
-                $middleware
-            );
         }
 
         return new MenuDefinition(
@@ -191,65 +247,121 @@ class MenuBuilder
         array $config,
         string $type
     ): ?string {
+        $controller = $config['controller'] ?? null;
+
+        /*
+        | Explicitly disabled.
+        */
         if (
-            ($config['controller']['enabled']
-                ?? true) === false
+            is_array($controller)
+            && ($controller['enabled'] ?? true) === false
         ) {
             return null;
         }
 
+        /*
+        | Explicit class.
+        */
         if (
-            $type !== 'resource' &&
-            !isset($config['controller']['class'])
+            is_array($controller)
+            && !empty($controller['class'])
         ) {
+            return $controller['class'];
+        }
+
+        /*
+        | Groups don't get controllers automatically.
+        */
+        if ($type === 'group') {
             return null;
         }
 
-        return $config['controller']['class']
-            ?? Str::studly($config['name'])
-            . 'Controller';
+        /*
+        | Resource default.
+        */
+        if ($type === 'resource') {
+            return Str::studly(
+                $config['name']
+            ) . 'Controller';
+        }
+
+        /*
+        | Action default.
+        |
+        | We only generate the controller class.
+        | No controller method is assumed.
+        */
+        if ($type === 'action') {
+            return Str::studly(
+                $config['name']
+            ) . 'Controller';
+        }
+
+        return null;
     }
 
     protected function resourceClass(
         array $config,
         string $type
     ): ?string {
+        /*
+        | Actions and groups don't have API resources.
+        */
         if (
-            ($config['resource']['enabled']
-                ?? true) === false
+            $type !== 'resource'
+        ) {
+            return null;
+        }
+
+        $resource = $config['resource'] ?? null;
+
+        if (
+            is_array($resource)
+            && ($resource['enabled'] ?? true) === false
         ) {
             return null;
         }
 
         if (
-            $type !== 'resource' &&
-            !isset($config['resource']['class'])
+            is_array($resource)
+            && !empty($resource['class'])
         ) {
-            return null;
+            return $resource['class'];
         }
 
-        return $config['resource']['class']
-            ?? Str::studly($config['name'])
-            . 'Resource';
+        return Str::studly(
+            $config['name']
+        ) . 'Resource';
     }
 
     protected function middleware(
-        array ...$sets
+        array $inherited,
+        array $current,
+        array $defaults = []
     ): array {
-        $result = [];
+        return array_values(
+            array_unique([
+                ...$inherited,
+                ...$defaults,
+                ...$current,
+            ])
+        );
+    }
 
-        foreach ($sets as $set) {
-            foreach ($set as $middleware) {
-                if (!in_array(
-                    $middleware,
-                    $result,
-                    true
-                )) {
-                    $result[] = $middleware;
-                }
-            }
+    protected function flattenNode(
+        MenuDefinition $definition,
+        array &$flat
+    ): void {
+        $flat[$definition->permissionKey()] = $definition;
+
+        foreach (
+            $definition->children
+            as $child
+        ) {
+            $this->flattenNode(
+                $child,
+                $flat
+            );
         }
-
-        return $result;
     }
 }

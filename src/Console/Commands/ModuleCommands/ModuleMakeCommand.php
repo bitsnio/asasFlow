@@ -5,7 +5,7 @@ namespace Bitsnio\AsasFlow\Console\Commands\ModuleCommands;
 use Bitsnio\Modules\Commands\Make\ModuleMakeCommand as BaseModuleMakeCommand;
 use Bitsnio\Modules\Contracts\ActivatorInterface;
 use Bitsnio\Modules\Generators\ModuleGenerator;
-use Bitsnio\AsasFlow\Generators\MenuGenerator;
+use Bitsnio\AsasFlow\Generators\Menu\MenuGenerator;
 use Bitsnio\AsasFlow\Generators\ModuleSettingsGenerator;
 use Bitsnio\AsasFlow\Console\Commands\Traits\HandlesComposerDump;
 

@@ -7,11 +7,15 @@ use Bitsnio\AsasFlow\Foundation\Support\FileHandler;
 use Bitsnio\AsasFlow\Foundation\Support\GeneratedBlock;
 use Bitsnio\AsasFlow\Foundation\Support\MenuDefinition;
 use Bitsnio\AsasFlow\Generators\Schema\SchemaDefinition;
+use Bitsnio\AsasFlow\Foundation\Support\GeneratorSupport;
+use Bitsnio\AsasFlow\Foundation\Support\StubRenderer;
 
 class RequestGenerator implements GeneratorInterface
 {
     public function __construct(
         protected FileHandler $files,
+        protected GeneratorSupport $support,
+        protected StubRenderer $stubs,
     ) {}
 
     public function generate(
@@ -220,49 +224,46 @@ class RequestGenerator implements GeneratorInterface
             . $definition->requestClass();
     }
 
+
     protected function content(
         $module,
         MenuDefinition $definition
     ): string {
-        $namespace =
-            "Modules\\{$module->getName()}\\Http\\Requests";
+        return $this->stubs->renderFile(
+            'request.stub',
+            [
+                'NAMESPACE' => $this->support->requestNamespace(
+                    $module,
+                    $definition
+                ),
 
-        $relative =
-            $definition->controllerNamespace();
+                'CLASS' => $definition->requestClass(),
 
-        if ($relative) {
-            $namespace .= '\\'
-                . $relative;
-        }
+                'IMPORTS' => $this->support->generatorImports(
+                    'request',
+                    [
+                        \Illuminate\Foundation\Http\FormRequest::class,
+                    ]
+                ),
 
-        return <<<PHP
-<?php
+                'TRAIT_IMPORTS' => $this->support->traitImports(
+                    'request'
+                ),
 
-namespace {$namespace};
-
-use Illuminate\Foundation\Http\FormRequest;
-
-class {$definition->requestClass()} extends FormRequest
-{
-    public function authorize(): bool
-    {
-        return true;
-    }
-
-    public function rules(): array
-    {
-        // @asasflow:generated-rules:start
-        return [];
-        // @asasflow:generated-rules:end
-    }
-}
-
-PHP;
+                'TRAITS' => $this->support->traitUsage(
+                    'request'
+                ),
+            ]
+        );
     }
 
     protected function buildRules(
         SchemaDefinition $schema
     ): string {
+
+        if (!$this->support->featureEnabled('request', 'schema_rules')) {
+            return '        return [];';
+        }
         $rules = $schema->validationRules();
 
         if (!$rules) {

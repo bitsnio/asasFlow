@@ -2,9 +2,12 @@
 
 namespace {{ NAMESPACE }};
 
+use Illuminate\Routing\Controller;
 {{ IMPORTS }}
+{{ TRAIT_IMPORTS }}
 
-class {{ CLASS }}
+class {{ CLASS }} extends Controller
 {
+{{ TRAITS }}
 {{ METHODS }}
 }

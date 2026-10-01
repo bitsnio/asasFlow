@@ -2,15 +2,16 @@
 
 namespace {{ NAMESPACE }};
 
-use Illuminate\Http\Request;
-use Illuminate\Http\Resources\Json\JsonResource;
+{{ IMPORTS }}
+{{ TRAIT_IMPORTS }}
 
 class {{ CLASS }} extends JsonResource
 {
+{{ TRAITS }}
     public function toArray(Request $request): array
     {
-        // @asasflow:fields:start
+        // @asasflow:generated-fields:start
         return parent::toArray($request);
-        // @asasflow:fields:end
+        // @asasflow:generated-fields:end
     }
 }

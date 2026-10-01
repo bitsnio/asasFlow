@@ -7,11 +7,16 @@ use Bitsnio\AsasFlow\Foundation\Support\FileHandler;
 use Bitsnio\AsasFlow\Foundation\Support\GeneratedBlock;
 use Bitsnio\AsasFlow\Foundation\Support\MenuDefinition;
 use Bitsnio\AsasFlow\Generators\Schema\SchemaDefinition;
+use Bitsnio\AsasFlow\Foundation\Support\GeneratorSupport;
+use Bitsnio\AsasFlow\Foundation\Support\StubRenderer;
 
 class ResourceGenerator implements GeneratorInterface
 {
     public function __construct(
         protected FileHandler $files,
+        protected GeneratorSupport $support,
+        protected StubRenderer $stubs,
+
     ) {}
 
     public function generate(
@@ -188,47 +193,48 @@ class ResourceGenerator implements GeneratorInterface
         }
     }
 
+
     protected function content(
         $module,
         MenuDefinition $definition
     ): string {
-        $namespace =
-            "Modules\\{$module->getName()}\\Http\\Resources";
+        return $this->stubs->renderFile(
+            'resource.stub',
+            [
+                'NAMESPACE' => $this->support->resourceNamespace(
+                    $module,
+                    $definition
+                ),
 
-        $relative =
-            $definition->resourceNamespace();
+                'CLASS' => $definition->resourceClass,
 
-        if ($relative) {
-            $namespace .= '\\'
-                . $relative;
-        }
+                'IMPORTS' => $this->support->generatorImports(
+                    'resource',
+                    [
+                        \Illuminate\Http\Request::class,
+                        \Illuminate\Http\Resources\Json\JsonResource::class,
+                    ]
+                ),
 
-        return <<<PHP
-<?php
+                'TRAIT_IMPORTS' => $this->support->traitImports(
+                    'resource'
+                ),
 
-namespace {$namespace};
-
-use Illuminate\Http\Request;
-use Illuminate\Http\Resources\Json\JsonResource;
-
-class {$definition->resourceClass} extends JsonResource
-{
-    public function toArray(Request \$request): array
-    {
-        // @asasflow:generated-fields:start
-        return parent::toArray(\$request);
-        // @asasflow:generated-fields:end
-    }
-}
-
-PHP;
+                'TRAITS' => $this->support->traitUsage(
+                    'resource'
+                ),
+            ]
+        );
     }
 
     protected function buildFields(
         SchemaDefinition $schema
     ): string {
-        $properties =
-            $schema->properties();
+
+        if (!$this->support->featureEnabled('resource', 'schema_fields')) {
+            return '        return [];';
+        }
+        $properties = $schema->properties();
 
         if (!$properties) {
             return '        return [];';

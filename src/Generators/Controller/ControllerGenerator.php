@@ -8,12 +8,14 @@ use Bitsnio\AsasFlow\Foundation\Support\GeneratedBlock;
 use Bitsnio\AsasFlow\Foundation\Support\StubRenderer;
 use Bitsnio\AsasFlow\Foundation\Support\MenuDefinition;
 use Bitsnio\AsasFlow\Generators\Schema\SchemaDefinition;
+use Bitsnio\AsasFlow\Foundation\Support\GeneratorSupport;
 
 class ControllerGenerator implements GeneratorInterface
 {
     public function __construct(
         protected FileHandler $files,
         protected StubRenderer $stubs,
+        protected GeneratorSupport $support
     ) {}
 
     public function generate(
@@ -207,44 +209,31 @@ class ControllerGenerator implements GeneratorInterface
         return $this->stubs->renderFile(
             'controller.stub',
             [
-                'NAMESPACE' =>
-                $this->namespace(
+                'NAMESPACE' => $this->support->controllerNamespace(
                     $module,
                     $definition
                 ),
 
-                'CLASS' =>
-                $definition->controllerClass,
+                'CLASS' => $definition->controllerClass,
 
-                'IMPORTS' =>
-                $this->imports(
+                'IMPORTS' => $this->imports(
                     $module,
                     $definition
                 ),
 
-                'METHODS' =>
-                $this->methods(
-                    $definition
+                'TRAIT_IMPORTS' => $this->support->traitImports(
+                    'controller'
                 ),
+
+                'TRAITS' => $this->support->traitUsage(
+                    'controller'
+                ),
+
+                'METHODS' => $this->methods($definition),
             ]
         );
     }
 
-    protected function namespace(
-        $module,
-        MenuDefinition $definition
-    ): string {
-        $namespace =
-            "Modules\\{$module->getName()}"
-            . "\\Http\\Controllers";
-
-        $relative =
-            $definition->controllerNamespace();
-
-        return $relative
-            ? $namespace . '\\' . $relative
-            : $namespace;
-    }
 
     protected function imports(
         $module,
@@ -252,55 +241,34 @@ class ControllerGenerator implements GeneratorInterface
     ): string {
         $imports = [];
 
+        $actions = $definition->routeActions();
+
         if (
-            in_array(
-                'store',
-                $definition->routeActions(),
-                true
-            ) ||
-            in_array(
-                'update',
-                $definition->routeActions(),
-                true
-            )
+            in_array('store', $actions, true) ||
+            in_array('update', $actions, true)
         ) {
-            $imports[] =
-                'use '
-                . $this->requestNamespace(
-                    $module,
-                    $definition
-                )
-                . '\\'
-                . $definition->requestClass()
-                . ';';
+            $imports[] = $this->support->requestNamespace(
+                $module,
+                $definition
+            ) . '\\' . $definition->requestClass();
         }
 
         if ($definition->model) {
-            $imports[] =
-                'use '
-                . $this->modelNamespace(
-                    $module
-                )
-                . '\\'
-                . $definition->modelClass()
-                . ';';
+            $imports[] = $this->support->modelNamespace(
+                $module
+            ) . '\\' . $definition->modelClass();
         }
 
         if ($definition->hasResource()) {
-            $imports[] =
-                'use '
-                . $this->resourceNamespace(
-                    $module,
-                    $definition
-                )
-                . '\\'
-                . $definition->resourceClass
-                . ';';
+            $imports[] = $this->support->resourceNamespace(
+                $module,
+                $definition
+            ) . '\\' . $definition->resourceClass;
         }
 
-        return implode(
-            PHP_EOL,
-            array_unique($imports)
+        return $this->support->generatorImports(
+            'controller',
+            $imports
         );
     }
 
@@ -353,34 +321,62 @@ class ControllerGenerator implements GeneratorInterface
     protected function indexMethod(
         MenuDefinition $definition
     ): string {
+
         if (!$definition->model) {
-            return <<<PHP
-    public function index()
-    {
-        return response()->json([
-            'message' => 'Index not implemented',
-        ], 501);
-    }
-PHP;
+            return <<<'PHP'
+                public function index()
+                {
+                    return response()->json([
+                        'message' => 'Index not implemented',
+                    ], 501);
+                }
+            PHP;
         }
+
+        $paginationEnabled = $this->support->featureEnabled(
+            'controller',
+            'pagination'
+        );
+
+        $paginationConfig = $this->support->featureConfig(
+            'controller',
+            'pagination',
+            []
+        );
+
+        $perPage = is_array($paginationConfig)
+            ? filter_var(
+                $paginationConfig['per_page'] ?? 20,
+                FILTER_VALIDATE_INT,
+                ['options' => ['min_range' => 1]]
+            )
+            : 20;
+
+        $perPage = $perPage ?: 20;
+
+        $pagination = $paginationEnabled
+            ? "paginate({$perPage})"
+            : 'paginate()';
+
+        $query = $definition->modelClass() . "::{$pagination}";
 
         if ($definition->hasResource()) {
             return <<<PHP
-    public function index()
-    {
-        return {$definition->resourceClass}::collection(
-            {$definition->modelClass()}::paginate()
-        );
-    }
-PHP;
+                public function index()
+                {
+                    return {$definition->resourceClass}::collection(
+                        {$query}
+                    );
+                }
+            PHP;
         }
 
         return <<<PHP
-    public function index()
-    {
-        return {$definition->modelClass()}::paginate();
-    }
-PHP;
+                    public function index()
+                    {
+                        return {$query};
+                    }
+                PHP;
     }
 
     protected function storeMethod(
@@ -388,14 +384,14 @@ PHP;
     ): string {
         if (!$definition->model) {
             return <<<PHP
-    public function store(
-        {$definition->requestClass()} \$request
-    ) {
-        return response()->json([
-            'message' => 'Store not implemented',
-        ], 501);
-    }
-PHP;
+                public function store(
+                    {$definition->requestClass()} \$request
+                ) {
+                    return response()->json([
+                        'message' => 'Store not implemented',
+                    ], 501);
+                }
+            PHP;
         }
 
         $return =
@@ -406,16 +402,16 @@ PHP;
             : 'return $item;';
 
         return <<<PHP
-    public function store(
-        {$definition->requestClass()} \$request
-    ) {
-        \$item = {$definition->modelClass()}::create(
-            \$request->validated()
-        );
+            public function store(
+                {$definition->requestClass()} \$request
+            ) {
+                \$item = {$definition->modelClass()}::create(
+                    \$request->validated()
+                );
 
-        {$return}
-    }
-PHP;
+                {$return}
+            }
+        PHP;
     }
 
     protected function showMethod(
@@ -426,14 +422,14 @@ PHP;
 
         if (!$definition->model) {
             return <<<PHP
-    public function show(
-        \${$parameter}
-    ) {
-        return response()->json([
-            'message' => 'Show not implemented',
-        ], 501);
-    }
-PHP;
+                public function show(
+                    \${$parameter}
+                ) {
+                    return response()->json([
+                        'message' => 'Show not implemented',
+                    ], 501);
+                }
+            PHP;
         }
 
         $return =
@@ -444,12 +440,12 @@ PHP;
             : "return \${$parameter};";
 
         return <<<PHP
-    public function show(
-        {$definition->modelClass()} \${$parameter}
-    ) {
-        {$return}
-    }
-PHP;
+                    public function show(
+                        {$definition->modelClass()} \${$parameter}
+                    ) {
+                        {$return}
+                    }
+                PHP;
     }
 
     protected function updateMethod(
@@ -519,45 +515,5 @@ PHP;
         return response()->noContent();
     }
 PHP;
-    }
-
-    protected function requestNamespace(
-        $module,
-        MenuDefinition $definition
-    ): string {
-        $namespace =
-            "Modules\\{$module->getName()}"
-            . "\\Http\\Requests";
-
-        $relative =
-            $definition->controllerNamespace();
-
-        return $relative
-            ? $namespace . '\\' . $relative
-            : $namespace;
-    }
-
-    protected function modelNamespace(
-        $module
-    ): string {
-        return
-            "Modules\\{$module->getName()}"
-            . "\\Models";
-    }
-
-    protected function resourceNamespace(
-        $module,
-        MenuDefinition $definition
-    ): string {
-        $namespace =
-            "Modules\\{$module->getName()}"
-            . "\\Http\\Resources";
-
-        $relative =
-            $definition->resourceNamespace();
-
-        return $relative
-            ? $namespace . '\\' . $relative
-            : $namespace;
     }
 }

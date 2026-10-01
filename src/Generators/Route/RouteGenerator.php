@@ -5,12 +5,14 @@ namespace Bitsnio\AsasFlow\Generators\Route;
 use Bitsnio\AsasFlow\Foundation\Contracts\GeneratorInterface;
 use Bitsnio\AsasFlow\Foundation\Support\FileHandler;
 use Bitsnio\AsasFlow\Foundation\Support\MenuDefinition;
+use Bitsnio\AsasFlow\Foundation\Support\GeneratorSupport;
 use Illuminate\Support\Str;
 
 class RouteGenerator implements GeneratorInterface
 {
     public function __construct(
         protected FileHandler $files,
+        protected GeneratorSupport $support,
     ) {}
 
     public function generate(
@@ -66,48 +68,39 @@ class RouteGenerator implements GeneratorInterface
         ];
     }
 
+
     protected function buildRouteFile(
         $module,
         array $definitions
     ): string {
-        $moduleName =
-            $module->getName();
+        $controllers = $this->collectControllers($definitions);
 
-        $controllers =
-            $this->collectControllers(
-                $definitions
-            );
-
-        $content =
-            "<?php\n\n";
-
-        $content .=
-            "use Illuminate\\Support\\Facades\\Route;\n";
+        $imports = [
+            \Illuminate\Support\Facades\Route::class,
+        ];
 
         foreach ($controllers as $definition) {
-            $namespace =
-                $this->controllerNamespace(
-                    $moduleName,
-                    $definition
-                );
-
-            $content .=
-                "use {$namespace}\\"
-                . $definition->controllerClass
-                . ";\n";
+            $imports[] = $this->support->controllerNamespace(
+                $module,
+                $definition
+            ) . '\\' . $definition->controllerClass;
         }
 
-        if (!empty($controllers)) {
-            $content .= "\n";
-        }
+        $content = "<?php\n\n";
+
+        $content .= $this->support->generatorImports(
+            'route',
+            $imports
+        );
+
+        $content .= "\n\n";
 
         foreach ($definitions as $definition) {
-            $content .=
-                $this->buildNode(
-                    $definition,
-                    [],
-                    0
-                );
+            $content .= $this->buildNode(
+                $definition,
+                [],
+                0
+            );
         }
 
         return $content;
@@ -353,28 +346,20 @@ class RouteGenerator implements GeneratorInterface
         return $result;
     }
 
-    protected function controllerNamespace(
-        string $moduleName,
-        MenuDefinition $definition
-    ): string {
-        $namespace =
-            "Modules\\{$moduleName}"
-            . "\\App\\Http\\Controllers";
+    /**
+     * Convert an array of values into a PHP array expression.
+     */
+    protected function phpArray(array $values): string
+    {
+        if (empty($values)) {
+            return '[]';
+        }
 
-        $relative =
-            $definition->controllerNamespace();
-
-        return $relative
-            ? $namespace . '\\' . $relative
-            : $namespace;
-    }
-
-    protected function phpArray(
-        array $values
-    ): string {
-        return var_export(
-            array_values($values),
-            true
+        $items = array_map(
+            fn($value) => var_export($value, true),
+            $values
         );
+
+        return '[' . implode(', ', $items) . ']';
     }
 }

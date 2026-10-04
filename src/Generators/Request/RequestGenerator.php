@@ -6,7 +6,7 @@ use Bitsnio\AsasFlow\Foundation\Contracts\GeneratorInterface;
 use Bitsnio\AsasFlow\Foundation\Support\FileHandler;
 use Bitsnio\AsasFlow\Foundation\Support\GeneratedBlock;
 use Bitsnio\AsasFlow\Foundation\Support\MenuDefinition;
-use Bitsnio\AsasFlow\Generators\Schema\SchemaDefinition;
+use Bitsnio\AsasFlow\Foundation\Support\SchemaDefinition;
 use Bitsnio\AsasFlow\Foundation\Support\GeneratorSupport;
 use Bitsnio\AsasFlow\Foundation\Support\StubRenderer;
 
@@ -257,16 +257,17 @@ class RequestGenerator implements GeneratorInterface
         );
     }
 
+
     protected function buildRules(
         SchemaDefinition $schema
     ): string {
-
         if (!$this->support->featureEnabled('request', 'schema_rules')) {
             return '        return [];';
         }
+
         $rules = $schema->validationRules();
 
-        if (!$rules) {
+        if ($rules === []) {
             return '        return [];';
         }
 
@@ -275,30 +276,15 @@ class RequestGenerator implements GeneratorInterface
         ];
 
         foreach ($rules as $field => $fieldRules) {
-            $encoded = implode(
-                '|',
-                $fieldRules
-            );
-
-            $lines[] =
-                "            "
-                . var_export(
-                    $field,
-                    true
-                )
-                . " => "
-                . var_export(
-                    $encoded,
-                    true
-                )
-                . ",";
+            $lines[] = '            '
+                . var_export($field, true)
+                . ' => '
+                . var_export(array_values($fieldRules), true)
+                . ',';
         }
 
         $lines[] = '        ];';
 
-        return implode(
-            PHP_EOL,
-            $lines
-        );
+        return implode(PHP_EOL, $lines);
     }
 }

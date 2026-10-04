@@ -8,6 +8,7 @@ use Bitsnio\AsasFlow\Generators\Migration\MigrationGenerator;
 use Bitsnio\AsasFlow\Generators\Model\ModelGenerator;
 use Bitsnio\AsasFlow\Generators\Request\RequestGenerator;
 use Bitsnio\AsasFlow\Generators\Resource\ResourceGenerator;
+use Bitsnio\AsasFlow\Foundation\Support\SchemaDefinition;
 
 class SchemaArtifactGenerator
 {
@@ -60,10 +61,7 @@ class SchemaArtifactGenerator
                     'path' => $schemaPath,
                 ];
             } else {
-                $schema =
-                    SchemaDefinition::fromFile(
-                        $schemaPath
-                    );
+                $schema = SchemaDefinition::fromFile($schemaPath);
 
                 $results['models'][] =
                     $this->modelGenerator->generate(

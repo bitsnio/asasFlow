@@ -6,7 +6,7 @@ use Bitsnio\AsasFlow\Foundation\Contracts\GeneratorInterface;
 use Bitsnio\AsasFlow\Foundation\Support\FileHandler;
 use Bitsnio\AsasFlow\Foundation\Support\GeneratedBlock;
 use Bitsnio\AsasFlow\Foundation\Support\MenuDefinition;
-use Bitsnio\AsasFlow\Generators\Schema\SchemaDefinition;
+use Bitsnio\AsasFlow\Foundation\Support\SchemaDefinition;
 use Bitsnio\AsasFlow\Foundation\Support\GeneratorSupport;
 use Bitsnio\AsasFlow\Foundation\Support\StubRenderer;
 

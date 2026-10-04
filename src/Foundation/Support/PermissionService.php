@@ -38,6 +38,7 @@ class PermissionService
         return $definitions;
     }
 
+
     protected function buildPermissions(
         MenuDefinition $definition,
         array &$permissions
@@ -51,32 +52,38 @@ class PermissionService
                     'delete' => 'Delete',
                 ] as $action => $label
             ) {
-                $permissions[] =
-                    $this->makePermission(
-                        $definition,
-                        $action,
-                        $label
-                    );
+                $permissions[] = $this->makePermission(
+                    $definition,
+                    $action,
+                    $label
+                );
+            }
+
+            foreach ($definition->customActions() as $name => $actionConfig) {
+                $permissions[] = new PermissionDefinition(
+                    name: $definition->customActionPermissionKey($name),
+                    description: $definition->customActionPermissionLabel($name),
+                    guard: 'api',
+                    module: $definition->module,
+                    menuPath: $definition->permissionKey(),
+                    method: $definition->customActionMethod($name),
+                );
             }
         }
 
-        if ($definition->isAction()) {
-            $permissions[] =
-                $this->makePermission(
-                    $definition,
-                    'execute',
-                    'Execute'
-                );
-        }
+        /*
+     * Keep legacy standalone action nodes supported.
+     */
+        // if ($definition->isAction()) {
+        //     $permissions[] = $this->makePermission(
+        //         $definition,
+        //         'execute',
+        //         'Execute'
+        //     );
+        // }
 
-        foreach (
-            $definition->children
-            as $child
-        ) {
-            $this->buildPermissions(
-                $child,
-                $permissions
-            );
+        foreach ($definition->children as $child) {
+            $this->buildPermissions($child, $permissions);
         }
     }
 
@@ -85,17 +92,11 @@ class PermissionService
         string $action,
         string $label
     ): PermissionDefinition {
-        $name =
-            $definition->permissionKey()
-            . '.'
-            . $action;
+        $name = $definition->permissionKey() . '.' . $action;
 
-        $custom =
-            $definition->permissions[$action]
-            ?? null;
+        $custom = $definition->permissions[$action] ?? null;
 
-        $description =
-            is_string($custom)
+        $description = is_string($custom)
             ? $custom
             : (
                 is_array($custom)

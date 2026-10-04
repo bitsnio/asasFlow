@@ -4,7 +4,7 @@ namespace Bitsnio\AsasFlow\Generators\Migration;
 
 use Bitsnio\AsasFlow\Foundation\Support\FileHandler;
 use Bitsnio\AsasFlow\Foundation\Support\MenuDefinition;
-use Bitsnio\AsasFlow\Generators\Schema\SchemaDefinition;
+use Bitsnio\AsasFlow\Foundation\Support\SchemaDefinition;
 use Illuminate\Support\Str;
 
 class MigrationGenerator
@@ -18,9 +18,7 @@ class MigrationGenerator
         MenuDefinition $definition,
         SchemaDefinition $schema
     ): array {
-        $migrationPath =
-            $module->getPath()
-            . '/database/migrations';
+        $migrationPath = $module->getPath(). '/database/migrations';
 
         $table =
             $definition->config['model']['table']
@@ -94,9 +92,9 @@ class MigrationGenerator
         foreach (
             glob(
                 $directory
-                . '/*_create_'
-                . $table
-                . '_table.php'
+                    . '/*_create_'
+                    . $table
+                    . '_table.php'
             ) ?: []
             as $file
         ) {
@@ -127,100 +125,99 @@ class MigrationGenerator
             implode(
                 PHP_EOL,
                 array_map(
-                    fn ($line) =>
-                        '            '
+                    fn($line) =>
+                    '            '
                         . $line,
                     $columns
                 )
             );
 
         return <<<PHP
-<?php
+                    <?php
 
-use Illuminate\Database\Migrations\Migration;
-use Illuminate\Database\Schema\Blueprint;
-use Illuminate\Support\Facades\Schema;
+                    use Illuminate\Database\Migrations\Migration;
+                    use Illuminate\Database\Schema\Blueprint;
+                    use Illuminate\Support\Facades\Schema;
 
-return new class extends Migration
-{
-    public function up(): void
+                    return new class extends Migration
+                    {
+                        public function up(): void
+                        {
+                            Schema::create('{$table}', function (Blueprint \$table) {
+                                \$table->id();
+                    {$body}
+                                \$table->timestamps();
+                                \$table->softDeletes();
+                            });
+                        }
+
+                        public function down(): void
+                        {
+                            Schema::dropIfExists('{$table}');
+                        }
+                    };
+
+                    PHP;
+    }
+
+
+    protected function column(array $column): string
     {
-        Schema::create('{$table}', function (Blueprint \$table) {
-            \$table->id();
-{$body}
-            \$table->timestamps();
-            \$table->softDeletes();
-        });
-    }
-
-    public function down(): void
-    {
-        Schema::dropIfExists('{$table}');
-    }
-};
-
-PHP;
-    }
-
-    protected function column(
-        array $column
-    ): string {
         $name = $column['name'];
         $type = $column['type'];
 
-        if ($name === 'id') {
+        if (in_array($name, [
+            'id',
+            'created_at',
+            'updated_at',
+            'deleted_at',
+        ], true)) {
             return '';
         }
 
-        if (
-            in_array(
-                $name,
-                [
-                    'created_at',
-                    'updated_at',
-                    'deleted_at',
-                ],
-                true
-            )
-        ) {
-            return '';
-        }
+        $quotedName = var_export($name, true);
 
         $line = match ($type) {
-            'integer' =>
-                "\$table->integer('{$name}')",
-
-            'number' =>
-                "\$table->decimal('{$name}', 18, 4)",
-
-            'boolean' =>
-                "\$table->boolean('{$name}')",
-
-            'array',
-            'object' =>
-                "\$table->json('{$name}')",
-
-            default =>
-                "\$table->string('{$name}')",
+            'integer' => "\$table->integer({$quotedName})",
+            'number' => "\$table->decimal({$quotedName}, 18, 4)",
+            'boolean' => "\$table->boolean({$quotedName})",
+            'array', 'object' => "\$table->{$this->jsonColumnMethod()}({$quotedName})",
+            default => $this->stringColumn($quotedName, $column),
         };
 
-        if ($column['nullable']) {
+        if ($column['nullable'] ?? false) {
             $line .= '->nullable()';
         }
 
-        if (
-            $column['default'] !== null
-        ) {
-            $default =
-                var_export(
-                    $column['default'],
-                    true
-                );
-
-            $line .=
-                "->default({$default})";
+        if (array_key_exists('default', $column) && $column['default'] !== null) {
+            $line .= '->default(' . var_export($column['default'], true) . ')';
         }
 
         return $line . ';';
     }
+
+
+    protected function jsonColumnMethod(): string
+    {
+        $driver = \Illuminate\Support\Facades\DB::connection()
+            ->getDriverName();
+
+        return match ($driver) {
+            'pgsql' => 'jsonb',
+            'mysql' => 'json',
+            default => 'json',
+        };
+    }
+    
+    protected function stringColumn(
+        string $quotedName,
+        array $column
+    ): string {
+        return match ($column['format'] ?? null) {
+            'date' => "\$table->date({$quotedName})",
+            'date-time' => "\$table->dateTime({$quotedName})",
+            default => "\$table->string({$quotedName})",
+        };
+    }
+
 }

@@ -97,6 +97,7 @@ class RouteGenerator implements GeneratorInterface
 
         foreach ($definitions as $definition) {
             $content .= $this->buildNode(
+                $module,
                 $definition,
                 [],
                 0
@@ -107,6 +108,7 @@ class RouteGenerator implements GeneratorInterface
     }
 
     protected function buildNode(
+        $module,
         MenuDefinition $definition,
         array $parentMiddleware,
         int $level
@@ -133,6 +135,7 @@ class RouteGenerator implements GeneratorInterface
         ) {
             $content .=
                 $this->buildResourceRoute(
+                    $module,
                     $definition,
                     $additionalMiddleware,
                     $level
@@ -140,16 +143,30 @@ class RouteGenerator implements GeneratorInterface
         }
 
         /*
-         * Action
-         */
-        if ($definition->isAction()) {
-            $content .=
-                $this->buildActionRoute(
-                    $definition,
-                    $additionalMiddleware,
-                    $level
-                );
+     * Custom actions belong to this resource controller.
+     */
+        foreach ($definition->customActions() as $actionName => $config) {
+            $content .= $this->buildResourceActionRoute(
+                $module,
+                $definition,
+                $actionName,
+                $definition->customActionMethod($actionName),
+                $additionalMiddleware,
+                $level
+            );
         }
+
+        // /*
+        //  * Action
+        //  */
+        // if ($definition->isAction()) {
+        //     $content .=
+        //         $this->buildActionRoute(
+        //             $definition,
+        //             $additionalMiddleware,
+        //             $level
+        //         );
+        // }
 
         /*
          * Children / group
@@ -188,6 +205,7 @@ class RouteGenerator implements GeneratorInterface
             ) {
                 $content .=
                     $this->buildNode(
+                        $module,
                         $child,
                         $definition->middleware,
                         $level + 1
@@ -203,25 +221,26 @@ class RouteGenerator implements GeneratorInterface
     }
 
     protected function buildResourceRoute(
+        $module,
         MenuDefinition $definition,
         array $middleware,
         int $level
     ): string {
-        $indent =
-            str_repeat('    ', $level);
 
-        $actions =
-            $definition->routeActions();
+        $indent = str_repeat('    ', $level);
 
-        $resource =
-            "Route::apiResource("
-            . "'"
-            . Str::kebab(
-                $definition->name
-            )
-            . "', "
-            . $definition->controllerClass
-            . "::class)";
+        // $controller = '\\'
+        //     . ltrim(
+        //         $this->support->controllerNamespace(
+        //             $module,
+        //             $definition
+        //         ) . '\\' . $definition->controllerClass,
+        //         '\\'
+        //     );
+
+        $actions = $definition->routeActions();
+
+        $resource = "Route::apiResource(" . var_export(Str::kebab($definition->name), true) . ", {$definition->controllerClass}::class)";
 
         $allActions = [
             'index',
@@ -232,34 +251,65 @@ class RouteGenerator implements GeneratorInterface
         ];
 
         if ($actions !== $allActions) {
-            $resource .=
-                "->only("
-                . $this->phpArray($actions)
-                . ")";
+            $resource .= '->only(' . $this->phpArray($actions) . ')';
         }
 
-        $resource .= ";";
+        $resource .= ';';
 
         if (!$middleware) {
-            return
-                $indent
-                . $resource
-                . "\n\n";
+            return $indent . $resource . "\n\n";
         }
 
-        return
-            $indent
-            . "Route::middleware("
-            . $this->phpArray($middleware)
+        return $indent
+            . 'Route::middleware(' . $this->phpArray($middleware)
             . ")->group(function () {\n"
-            . $indent
-            . "    "
-            . $resource
-            . "\n"
-            . $indent
-            . "});\n\n";
+            . $indent . '    ' . $resource . "\n"
+            . $indent . "});\n\n";
     }
 
+
+    protected function buildResourceActionRoute(
+        $module,
+        MenuDefinition $definition,
+        string $actionName,
+        string $method,
+        array $middleware,
+        int $level
+    ): string {
+        
+        $indent = str_repeat('    ', $level);
+
+        // // $controller = '\\'
+        //     . ltrim(
+        //         $this->support->controllerNamespace(
+        //             $module,
+        //             $definition
+        //         ) . '\\' . $definition->controllerClass,
+        //         '\\'
+        //     );
+
+        $uri = Str::kebab($definition->name) . '/' . Str::kebab($actionName);
+
+        $route = 'Route::'
+            . strtolower($method)
+            . '('
+            . var_export($uri, true)
+            . ', ['
+            . $definition->controllerClass
+            . '::class, '
+            . var_export(Str::camel($actionName), true)
+            . ']);';
+
+        if (!$middleware) {
+            return $indent . $route . "\n\n";
+        }
+
+        return $indent
+            . 'Route::middleware(' . $this->phpArray($middleware)
+            . ")->group(function () {\n"
+            . $indent . '    ' . $route . "\n"
+            . $indent . "});\n\n";
+    }
     protected function buildActionRoute(
         MenuDefinition $definition,
         array $middleware,

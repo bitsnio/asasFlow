@@ -230,9 +230,7 @@ class MenuDefinition
             );
         }
 
-        return match (
-            $this->config['routes_type'] ?? 'full'
-        ) {
+        return match ($this->config['routes_type'] ?? 'full') {
             'index', 'list' => ['index'],
             'create', 'store' => ['store'],
             'show' => ['show'],
@@ -254,5 +252,66 @@ class MenuDefinition
         return Str::camel(
             $this->modelClass()
         );
+    }
+
+    /**
+     * Custom actions belonging to this resource.
+     *
+     * @return array<string, array>
+     */
+    public function customActions(): array
+    {
+        $actions = $this->config['actions'] ?? [];
+
+        if (!is_array($actions)) {
+            return [];
+        }
+
+        return $actions;
+    }
+
+    /**
+     * HTTP method for a custom action.
+     */
+    public function customActionMethod(string $name): string
+    {
+        $action = $this->customActions()[$name] ?? [];
+
+        return strtoupper($action['method'] ?? 'POST');
+    }
+
+    /**
+     * Human-readable permission label for a custom action.
+     */
+    public function customActionPermissionLabel(string $name): string
+    {
+        $action = $this->customActions()[$name] ?? [];
+
+        return $action['permissionLabel']
+            ?? Str::headline($name) . ' ' . $this->title;
+    }
+
+    /**
+     * Preserve the existing action permission naming convention.
+     *
+     * Example:
+     * organization.companies.approve.execute
+     */
+    public function customActionPermissionKey(string $name): string
+    {
+        return $this->permissionKey()
+            . '.'
+            . Str::kebab($name)
+            . '.execute';
+    }
+
+    /**
+     * Full custom action route path.
+     */
+    public function customActionRoutePath(string $name): string
+    {
+        return $this->routePath()
+            . '/'
+            . Str::kebab($name);
     }
 }

@@ -10,12 +10,12 @@
 
 # 1. INCLUDE_DIRS: Directories to process for your CURRENT requirement.
 #    Leave as empty array () to create context for the WHOLE PROJECT.
-INCLUDE_DIRS=("src/Generators" "src/Foundation" "src/Console/Commands/ControllerCommands" )
+INCLUDE_DIRS=("src/Generators/Schema" "src/Generators/Migration" "" )
 
 # 2. EXTRA_EXCLUDE_DIRS: Directories to SKIP. 
 #    These will be removed from BOTH the directory tree AND file scanning.
 #    Works even if FULL_PROJECT_STRUCTURE is true!
-EXTRA_EXCLUDE_DIRS=("stubs" "docs" "packages")
+EXTRA_EXCLUDE_DIRS=("stubs" "packages")
 
 # 3. INCLUDE_FILES: Specific files to force-include even if their folder is skipped.
 INCLUDE_FILES=("")

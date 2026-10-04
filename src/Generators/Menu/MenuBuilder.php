@@ -180,6 +180,54 @@ class MenuBuilder
             }
         }
 
+
+        /*
+        |--------------------------------------------------------------------------
+        | Resource Custom Action Validation
+        |--------------------------------------------------------------------------
+        */
+
+        if (isset($config['actions'])) {
+            if ($type !== 'resource') {
+                throw new InvalidArgumentException(
+                    "Custom actions can only be defined on resources. "
+                        . "Invalid item [{$name}]."
+                );
+            }
+
+            if (!is_array($config['actions'])) {
+                throw new InvalidArgumentException(
+                    "Actions for resource [{$name}] must be an array."
+                );
+            }
+
+            foreach ($config['actions'] as $actionName => $actionConfig) {
+                if (
+                    !is_string($actionName) ||
+                    !preg_match('/^[a-zA-Z_][a-zA-Z0-9_]*$/', $actionName)
+                ) {
+                    throw new InvalidArgumentException(
+                        "Invalid custom action name on resource [{$name}]."
+                    );
+                }
+
+                if (!is_array($actionConfig)) {
+                    throw new InvalidArgumentException(
+                        "Configuration for action [{$actionName}] "
+                            . "on resource [{$name}] must be an array."
+                    );
+                }
+
+                $method = strtoupper($actionConfig['method'] ?? 'POST');
+
+                if (!in_array($method, self::ACTION_METHODS, true)) {
+                    throw new InvalidArgumentException(
+                        "Invalid method [{$method}] for action "
+                            . "[{$actionName}] on resource [{$name}]."
+                    );
+                }
+            }
+        }
         /*
         |--------------------------------------------------------------------------
         | Component Defaults

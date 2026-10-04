@@ -7,8 +7,9 @@ use Bitsnio\AsasFlow\Foundation\Support\FileHandler;
 use Bitsnio\AsasFlow\Foundation\Support\GeneratedBlock;
 use Bitsnio\AsasFlow\Foundation\Support\StubRenderer;
 use Bitsnio\AsasFlow\Foundation\Support\MenuDefinition;
-use Bitsnio\AsasFlow\Generators\Schema\SchemaDefinition;
+use Bitsnio\AsasFlow\Foundation\Support\SchemaDefinition;
 use Bitsnio\AsasFlow\Foundation\Support\GeneratorSupport;
+use Illuminate\Support\Str;
 
 class ControllerGenerator implements GeneratorInterface
 {
@@ -266,6 +267,10 @@ class ControllerGenerator implements GeneratorInterface
             ) . '\\' . $definition->resourceClass;
         }
 
+
+        if ($definition->customActions()) {
+            $imports[] = \Illuminate\Http\Request::class;
+        }
         return $this->support->generatorImports(
             'controller',
             $imports
@@ -312,10 +317,30 @@ class ControllerGenerator implements GeneratorInterface
                 };
         }
 
+        foreach (array_keys($definition->customActions()) as $actionName) {
+            $methods[] = $this->customActionMethod($actionName);
+        }
+
+
         return implode(
             PHP_EOL . PHP_EOL,
             array_filter($methods)
         );
+    }
+
+
+    protected function customActionMethod(string $actionName): string
+    {
+        $method = Str::camel($actionName);
+
+        return <<<PHP
+                public function {$method}(Request \$request)
+                {
+                    return response()->json([
+                        'message' => '{$method} not implemented',
+                    ], 501);
+                }
+                PHP;
     }
 
     protected function indexMethod(

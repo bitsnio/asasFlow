@@ -19,6 +19,9 @@ src/Generators
 src/Generators/Cache
 src/Generators/Controller
 src/Generators/Menu
+src/Generators/Migration
+src/Generators/Model
+src/Generators/Request
 src/Generators/Resource
 src/Generators/Route
 src/Generators/Schema
@@ -37,11 +40,12 @@ src/Generators/Stubs
 namespace Bitsnio\AsasFlow\Console\Commands\ControllerCommands;
 
 use Bitsnio\AsasFlow\Foundation\Support\FileHandler;
-use Bitsnio\AsasFlow\Generators\Menu\MenuBuilder;
 use Bitsnio\AsasFlow\Generators\Controller\ControllerGenerator;
+use Bitsnio\AsasFlow\Generators\Menu\MenuBuilder;
+use Bitsnio\AsasFlow\Generators\Request\RequestGenerator;
 use Bitsnio\AsasFlow\Generators\Resource\ResourceGenerator;
-use Bitsnio\AsasFlow\Generators\Schema\SchemaGenerator;
 use Bitsnio\AsasFlow\Generators\Route\RouteGenerator;
+use Bitsnio\AsasFlow\Generators\Schema\SchemaGenerator;
 use Bitsnio\Modules\Contracts\RepositoryInterface;
 use Illuminate\Console\Command;
 use Throwable;
@@ -54,16 +58,18 @@ class GenerateControllersCommand extends Command
         {--force : Force regeneration}
         {--routes-only : Only generate routes}
         {--controllers-only : Only generate controllers}
+        {--requests-only : Only generate requests}
         {--resources-only : Only generate resources}
         {--schemas-only : Only generate schemas}
         {--dry-run : Preview generated files}
         {--trace : Show route hierarchy}';
 
     protected $description =
-        'Generate controllers, resources, schemas and API routes recursively from module menu configuration.';
+        'Generate controllers, requests, resources, schemas and API routes recursively from module menu configuration.';
 
     public function __construct(
         protected ControllerGenerator $controllerGenerator,
+        protected RequestGenerator $requestGenerator,
         protected ResourceGenerator $resourceGenerator,
         protected SchemaGenerator $schemaGenerator,
         protected RouteGenerator $routeGenerator,
@@ -105,7 +111,8 @@ class GenerateControllersCommand extends Command
                 return self::FAILURE;
             }
 
-            $menu = require $menuPath;
+            $menu =
+                require $menuPath;
 
             $definitions =
                 $this->definitionBuilder
@@ -168,11 +175,18 @@ class GenerateControllersCommand extends Command
                 (bool) $this->option('force'),
 
             'routesOnly' =>
-                (bool) $this->option('routes-only'),
+                (bool) $this->option(
+                    'routes-only'
+                ),
 
             'controllersOnly' =>
                 (bool) $this->option(
                     'controllers-only'
+                ),
+
+            'requestsOnly' =>
+                (bool) $this->option(
+                    'requests-only'
                 ),
 
             'resourcesOnly' =>
@@ -194,6 +208,7 @@ class GenerateControllersCommand extends Command
     ): array {
         $results = [
             'controllers' => [],
+            'requests' => [],
             'resources' => [],
             'schemas' => [],
             'routes' => [],
@@ -205,6 +220,9 @@ class GenerateControllersCommand extends Command
 
             'controllers' =>
                 $options['controllersOnly'],
+
+            'requests' =>
+                $options['requestsOnly'],
 
             'resources' =>
                 $options['resourcesOnly'],
@@ -225,6 +243,19 @@ class GenerateControllersCommand extends Command
         ) {
             $results['controllers'] =
                 $this->controllerGenerator
+                    ->generate(
+                        $module,
+                        $definitions,
+                        $options
+                    );
+        }
+
+        if (
+            !$only ||
+            isset($only['requests'])
+        ) {
+            $results['requests'] =
+                $this->requestGenerator
                     ->generate(
                         $module,
                         $definitions,
@@ -292,6 +323,9 @@ class GenerateControllersCommand extends Command
             'controllers' =>
                 $options['controllersOnly'],
 
+            'requests' =>
+                $options['requestsOnly'],
+
             'resources' =>
                 $options['resourcesOnly'],
 
@@ -306,6 +340,21 @@ class GenerateControllersCommand extends Command
             $changes = [
                 ...$changes,
                 ...$this->controllerGenerator
+                    ->preview(
+                        $module,
+                        $definitions,
+                        $options
+                    ),
+            ];
+        }
+
+        if (
+            !$only ||
+            isset($only['requests'])
+        ) {
+            $changes = [
+                ...$changes,
+                ...$this->requestGenerator
                     ->preview(
                         $module,
                         $definitions,
@@ -401,7 +450,10 @@ class GenerateControllersCommand extends Command
     ): void {
         foreach ($definitions as $definition) {
             $this->line(
-                str_repeat('  ', $level)
+                str_repeat(
+                    '  ',
+                    $level
+                )
                 . '- '
                 . $definition->routePath()
             );
@@ -423,10 +475,16 @@ class GenerateControllersCommand extends Command
         );
 
         foreach (
-            ['controllers', 'resources', 'schemas']
-            as $type
+            [
+                'controllers',
+                'requests',
+                'resources',
+                'schemas',
+            ] as $type
         ) {
-            if (empty($results[$type])) {
+            if (
+                empty($results[$type])
+            ) {
                 continue;
             }
 
@@ -442,7 +500,7 @@ class GenerateControllersCommand extends Command
             ) {
                 $this->line(
                     "  {$result['action']}: "
-                    . "{$result['name']}"
+                    . ($result['name'] ?? '')
                 );
 
                 if (
@@ -450,7 +508,9 @@ class GenerateControllersCommand extends Command
                         ->isVerbose()
                 ) {
                     $this->line(
-                        "    {$result['full_path']}"
+                        "    "
+                        . ($result['full_path']
+                            ?? '')
                     );
                 }
             }
@@ -465,6 +525,191 @@ class GenerateControllersCommand extends Command
                 . "{$route['action']} "
                 . "{$route['path']}"
             );
+        }
+    }
+}
+```
+
+### src/Console/Commands/ControllerCommands/GenerateFromSchemaCommand.php
+
+```php
+<?php
+
+namespace Bitsnio\AsasFlow\Console\Commands\ControllerCommands;
+
+use Bitsnio\AsasFlow\Foundation\Support\FileHandler;
+use Bitsnio\AsasFlow\Generators\Menu\MenuBuilder;
+use Bitsnio\AsasFlow\Generators\Schema\SchemaArtifactGenerator;
+use Bitsnio\Modules\Contracts\RepositoryInterface;
+use Illuminate\Console\Command;
+use Throwable;
+
+class GenerateFromSchemaCommand extends Command
+{
+    protected $signature =
+        'asasflow:generate-from-schema
+        {module : The module name}
+        {--trace : Show schema generation hierarchy}
+        {--dry-run : Preview schema-driven generation}';
+
+    protected $description =
+        'Generate models, migrations, validation, resources and controller updates from module schemas.';
+
+    public function __construct(
+        protected SchemaArtifactGenerator $generator,
+        protected MenuBuilder $definitionBuilder,
+        protected FileHandler $files,
+        protected RepositoryInterface $moduleRepository,
+    ) {
+        parent::__construct();
+    }
+
+    public function handle(): int
+    {
+        try {
+            $moduleName =
+                $this->argument('module');
+
+            $module =
+                $this->moduleRepository
+                    ->find($moduleName);
+
+            if (!$module) {
+                $this->error(
+                    "Module [{$moduleName}] does not exist!"
+                );
+
+                return self::FAILURE;
+            }
+
+            $menuPath =
+                $this->files->getMenuPath(
+                    $module
+                );
+
+            if (!$this->files->exists($menuPath)) {
+                $this->error(
+                    "Menu configuration not found at: {$menuPath}"
+                );
+
+                return self::FAILURE;
+            }
+
+            $menu =
+                require $menuPath;
+
+            $definitions =
+                $this->definitionBuilder
+                    ->build($menu);
+
+            if ($this->option('trace')) {
+                $this->displayTrace(
+                    $definitions
+                );
+            }
+
+            if ($this->option('dry-run')) {
+                $this->info(
+                    'Dry run: schema artifacts were not generated.'
+                );
+
+                return self::SUCCESS;
+            }
+
+            $results =
+                $this->generator->generate(
+                    $module,
+                    $definitions
+                );
+
+            $this->displayResults(
+                $results
+            );
+
+            return self::SUCCESS;
+        } catch (Throwable $e) {
+            $this->error(
+                'Schema artifact generation failed: '
+                . $e->getMessage()
+            );
+
+            if (
+                $this->getOutput()
+                    ->isVerbose()
+            ) {
+                $this->line(
+                    $e->getTraceAsString()
+                );
+            }
+
+            return self::FAILURE;
+        }
+    }
+
+    protected function displayTrace(
+        array $definitions
+    ): void {
+        $this->info(
+            'Schema hierarchy:'
+        );
+
+        $this->traceNodes(
+            $definitions,
+            0
+        );
+    }
+
+    protected function traceNodes(
+        array $definitions,
+        int $level
+    ): void {
+        foreach ($definitions as $definition) {
+            $this->line(
+                str_repeat(
+                    '  ',
+                    $level
+                )
+                . '- '
+                . $definition->permissionKey()
+            );
+
+            $this->traceNodes(
+                $definition->children,
+                $level + 1
+            );
+        }
+    }
+
+    protected function displayResults(
+        array $results
+    ): void {
+        $this->info(
+            'Schema artifact generation complete.'
+        );
+
+        foreach ($results as $type => $items) {
+            if (!is_array($items)) {
+                continue;
+            }
+
+            $this->line(
+                "\n"
+                . ucfirst($type)
+                . ':'
+            );
+
+            foreach ($items as $item) {
+                if (!is_array($item)) {
+                    continue;
+                }
+
+                $this->line(
+                    '  '
+                    . ($item['action'] ?? 'processed')
+                    . ': '
+                    . ($item['path'] ?? '')
+                );
+            }
         }
     }
 }
@@ -572,12 +817,14 @@ class FileHandler
 
     public function getMenuPath($module): string
     {
-        return $module->getPath() . '/config/menu.php';
+        return $module->getPath()
+            . '/config/menu.php';
     }
 
     public function getRoutesPath($module): string
     {
-        return $module->getPath() . '/Routes/api.php';
+        return $module->getPath()
+            . '/Routes/api.php';
     }
 
     public function getControllerPath(
@@ -600,6 +847,26 @@ class FileHandler
             . '.php';
     }
 
+    public function getRequestPath(
+        $module,
+        string $requestPath
+    ): string {
+        return $module->getPath()
+            . '/App/Http/Requests/'
+            . $requestPath
+            . '.php';
+    }
+
+    public function getModelPath(
+        $module,
+        string $modelPath
+    ): string {
+        return $module->getPath()
+            . '/App/Models/'
+            . $modelPath
+            . '.php';
+    }
+
     public function getSchemaPath(
         $module,
         string $schemaName
@@ -609,7 +876,1116 @@ class FileHandler
             . $schemaName
             . '.json';
     }
+
+    public function updateGeneratedBlock(
+        string $path,
+        string $block,
+        string $content
+    ): bool {
+        if (!$this->exists($path)) {
+            return false;
+        }
+
+        $document = $this->read($path);
+
+        if (!GeneratedBlock::has($document, $block)) {
+            return false;
+        }
+
+        $document = GeneratedBlock::replace(
+            $document,
+            $block,
+            $content
+        );
+
+        File::put($path, $document);
+
+        return true;
+    }
 }
+```
+
+### src/Foundation/Support/GeneratedBlock.php
+
+```php
+<?php
+
+namespace Bitsnio\AsasFlow\Foundation\Support;
+
+use RuntimeException;
+
+class GeneratedBlock
+{
+    public const PREFIX = '@asasflow:';
+
+    public static function wrap(
+        string $name,
+        string $content,
+        string $indent = ''
+    ): string {
+        return $indent . '// @asasflow:' . $name . ':start'
+            . PHP_EOL
+            . $content
+            . (str_ends_with($content, PHP_EOL) ? '' : PHP_EOL)
+            . $indent . '// @asasflow:' . $name . ':end';
+    }
+
+    public static function replace(
+        string $document,
+        string $name,
+        string $content
+    ): string {
+        $pattern = self::pattern($name);
+
+        $updated = preg_replace_callback(
+            $pattern,
+            static function (array $matches) use ($content): string {
+                return $matches[1]
+                    . $content
+                    . $matches[3];
+            },
+            $document,
+            1
+        );
+
+        if ($updated === null) {
+            throw new RuntimeException(
+                "Unable to update generated block [{$name}]."
+            );
+        }
+
+        return $updated;
+    }
+
+    public static function has(
+        string $document,
+        string $name
+    ): bool {
+        return preg_match(
+            self::pattern($name),
+            $document
+        ) === 1;
+    }
+
+    protected static function pattern(string $name): string
+    {
+        $marker = preg_quote($name, '/');
+
+        return '/(^[ \t]*\/\/ @asasflow:'
+            . $marker
+            . ':start[^\r\n]*\r?\n)'
+            . '(.*?)'
+            . '(^[ \t]*\/\/ @asasflow:'
+            . $marker
+            . ':end[^\r\n]*$)/ms';
+    }
+}
+```
+
+### src/Foundation/Support/GeneratorSupport.php
+
+```php
+<?php
+
+namespace Bitsnio\AsasFlow\Foundation\Support;
+
+class GeneratorSupport
+{
+    public function moduleNamespace($module): string
+    {
+        return "Modules\\{$module->getName()}";
+    }
+
+    public function controllerNamespace(
+        $module,
+        MenuDefinition $definition
+    ): string {
+        return $this->appendNamespace(
+            $this->moduleNamespace($module) . '\\Http\\Controllers',
+            $definition->controllerNamespace()
+        );
+    }
+
+    public function requestNamespace(
+        $module,
+        MenuDefinition $definition
+    ): string {
+        return $this->appendNamespace(
+            $this->moduleNamespace($module) . '\\Http\\Requests',
+            $definition->controllerNamespace()
+        );
+    }
+
+    public function resourceNamespace(
+        $module,
+        MenuDefinition $definition
+    ): string {
+        return $this->appendNamespace(
+            $this->moduleNamespace($module) . '\\Http\\Resources',
+            $definition->resourceNamespace()
+        );
+    }
+
+    public function modelNamespace($module): string
+    {
+        return $this->moduleNamespace($module) . '\\Models';
+    }
+
+    protected function appendNamespace(
+        string $base,
+        ?string $relative
+    ): string {
+        $relative = trim((string) $relative, '\\');
+
+        return $relative !== ''
+            ? $base . '\\' . $relative
+            : $base;
+    }
+
+    /**
+     * Return normalized, unique fully qualified class names.
+     */
+    public function normalizeClasses(array $classes): array
+    {
+        $normalized = [];
+
+        foreach ($classes as $class) {
+            if (!is_string($class) || trim($class) === '') {
+                continue;
+            }
+
+            $class = ltrim(trim($class), '\\');
+
+            if (!in_array($class, $normalized, true)) {
+                $normalized[] = $class;
+            }
+        }
+
+        return $normalized;
+    }
+
+    /**
+     * Format fully qualified class names as PHP import statements.
+     */
+    public function imports(array $classes): string
+    {
+        $lines = array_map(
+            static fn(string $class): string => "use {$class};",
+            $this->normalizeClasses($classes)
+        );
+
+        return implode(PHP_EOL, $lines);
+    }
+
+    public function configuredImports(string $generator): array
+    {
+        $imports = config(
+            "asasFlow.generators.{$generator}.imports",
+            []
+        );
+
+        return is_array($imports)
+            ? $this->normalizeClasses($imports)
+            : [];
+    }
+
+    /**
+     * Required imports are supplied by the generator.
+     * Configured imports are optional project-wide additions.
+     */
+    public function generatorImports(
+        string $generator,
+        array $requiredImports = []
+    ): string {
+        return $this->imports([
+            ...$requiredImports,
+            ...$this->configuredImports($generator),
+        ]);
+    }
+
+    public function configuredTraits(string $generator): array
+    {
+        $traits = config(
+            "asasFlow.generators.{$generator}.traits",
+            []
+        );
+
+        return is_array($traits)
+            ? $this->normalizeClasses($traits)
+            : [];
+    }
+
+    public function traitImports(string $generator): string
+    {
+        return $this->imports(
+            $this->configuredTraits($generator)
+        );
+    }
+
+    /**
+     * Generate trait usage statements for inside a PHP class.
+     */
+    public function traitUsage(string $generator): string
+    {
+        $traits = $this->configuredTraits($generator);
+
+        if ($traits === []) {
+            return '';
+        }
+
+        $shortNames = [];
+
+        foreach ($traits as $trait) {
+            $shortName = class_basename($trait);
+
+            if (in_array($shortName, $shortNames, true)) {
+                throw new \InvalidArgumentException(
+                    "Configured {$generator} traits contain duplicate "
+                        . "short name [{$shortName}]. Use traits with unique names."
+                );
+            }
+
+            $shortNames[] = $shortName;
+        }
+
+        return implode(
+            PHP_EOL,
+            array_map(
+                static fn(string $trait): string =>
+                '    use ' . class_basename($trait) . ';',
+                $traits
+            )
+        );
+    }
+
+    public function featureEnabled(
+        string $generator,
+        string $feature
+    ): bool {
+        return (bool) config(
+            "asasFlow.generators.{$generator}.features.{$feature}.enabled",
+            false
+        );
+    }
+
+    public function featureConfig(
+        string $generator,
+        string $feature,
+        mixed $default = []
+    ): mixed {
+        return config(
+            "asasFlow.generators.{$generator}.features.{$feature}",
+            $default
+        );
+    }
+}
+
+```
+
+### src/Foundation/Support/MenuDefinition.php
+
+```php
+<?php
+
+namespace Bitsnio\AsasFlow\Foundation\Support;
+
+use Illuminate\Support\Str;
+
+class MenuDefinition
+{
+    public function __construct(
+        public readonly string $module,
+        public readonly string $name,
+        public readonly string $title,
+        public readonly array $path,
+        public readonly string $type = 'group',
+        public readonly array $middleware = [],
+        public readonly bool $model = false,
+        public readonly array $routes = [],
+        public readonly array $permissions = [],
+        public readonly ?string $controllerClass = null,
+        public readonly ?string $resourceClass = null,
+        public readonly ?string $schemaName = null,
+        public readonly array $children = [],
+        public readonly array $config = [],
+    ) {}
+
+    /*
+    |--------------------------------------------------------------------------
+    | Type
+    |--------------------------------------------------------------------------
+    */
+
+    public function isGroup(): bool
+    {
+        return $this->type === 'group';
+    }
+
+    public function isResource(): bool
+    {
+        return $this->type === 'resource';
+    }
+
+    public function isAction(): bool
+    {
+        return $this->type === 'action';
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Generated Components
+    |--------------------------------------------------------------------------
+    */
+
+    public function hasController(): bool
+    {
+        return $this->controllerClass !== null;
+    }
+
+    public function hasResource(): bool
+    {
+        return $this->resourceClass !== null;
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Menu / Permission Path
+    |--------------------------------------------------------------------------
+    */
+
+    public function permissionKey(): string
+    {
+        return implode(
+            '.',
+            array_map(
+                [Str::class, 'kebab'],
+                $this->path
+            )
+        );
+    }
+
+    public function routePath(): string
+    {
+        $segments = array_map(
+            [Str::class, 'kebab'],
+            $this->path
+        );
+
+        if ($this->isAction()) {
+            array_pop($segments);
+
+            $actionPath = $this->actionPath();
+
+            if ($actionPath !== '') {
+                $segments[] = $actionPath;
+            }
+        }
+
+        return implode('/', $segments);
+    }
+
+    public function routeSegment(): string
+    {
+        return $this->isAction()
+            ? $this->actionPath()
+            : Str::kebab($this->name);
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Action
+    |--------------------------------------------------------------------------
+    */
+
+    public function actionMethod(): ?string
+    {
+        if (!$this->isAction()) {
+            return null;
+        }
+
+        return strtoupper(
+            $this->config['method'] ?? 'POST'
+        );
+    }
+
+    public function actionPath(): string
+    {
+        if (!$this->isAction()) {
+            return Str::kebab($this->name);
+        }
+
+        return trim(
+            (string) (
+                $this->config['path']
+                ?? Str::kebab($this->name)
+            ),
+            '/'
+        );
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Controller / Resource Namespace
+    |--------------------------------------------------------------------------
+    */
+
+    public function controllerNamespace(): string
+    {
+        return $this->relativeNamespace($this->path);
+    }
+
+    public function controllerRelativePath(): string
+    {
+        $namespace = $this->controllerNamespace();
+
+        return ($namespace
+            ? str_replace('\\', '/', $namespace) . '/'
+            : '')
+            . $this->controllerClass;
+    }
+
+    public function resourceNamespace(): string
+    {
+        return $this->relativeNamespace($this->path);
+    }
+
+    public function resourceRelativePath(): string
+    {
+        $namespace = $this->resourceNamespace();
+
+        return ($namespace
+            ? str_replace('\\', '/', $namespace) . '/'
+            : '')
+            . $this->resourceClass;
+    }
+
+    protected function relativeNamespace(
+        array $segments
+    ): string {
+        return implode(
+            '\\',
+            array_map(
+                [Str::class, 'studly'],
+                $segments
+            )
+        );
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Model / Request
+    |--------------------------------------------------------------------------
+    */
+
+    public function modelClass(): string
+    {
+        $model = $this->config['model'] ?? null;
+
+        if (is_array($model)) {
+            return $model['class']
+                ?? Str::studly($this->name);
+        }
+
+        return $this->config['model_name']
+            ?? Str::studly($this->name);
+    }
+
+    public function requestClass(): string
+    {
+        $request = $this->config['request'] ?? null;
+
+        if (is_array($request)) {
+            return $request['class']
+                ?? $this->modelClass() . 'Request';
+        }
+
+        return $this->config['request_name']
+            ?? $this->modelClass() . 'Request';
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | CRUD Routes
+    |--------------------------------------------------------------------------
+    */
+
+    public function routeActions(): array
+    {
+        if (!empty($this->routes)) {
+            return array_values(
+                array_unique($this->routes)
+            );
+        }
+
+        return match (
+            $this->config['routes_type'] ?? 'full'
+        ) {
+            'index', 'list' => ['index'],
+            'create', 'store' => ['store'],
+            'show' => ['show'],
+            'update' => ['update'],
+            'delete', 'destroy' => ['destroy'],
+
+            default => [
+                'index',
+                'store',
+                'show',
+                'update',
+                'destroy',
+            ],
+        };
+    }
+
+    public function parameterName(): string
+    {
+        return Str::camel(
+            $this->modelClass()
+        );
+    }
+}
+```
+
+### src/Foundation/Support/MenuService.php
+
+```php
+<?php
+
+namespace Bitsnio\AsasFlow\Foundation\Support;
+
+use Bitsnio\Modules\Contracts\RepositoryInterface;
+use Bitsnio\AsasFlow\Generators\Menu\MenuBuilder;
+use PHPOpenSourceSaver\JWTAuth\Facades\JWTAuth;
+
+class MenuService
+{
+    public function __construct(
+        protected RepositoryInterface $repository,
+        protected MenuBuilder $builder,
+    ) {}
+
+    /**
+     * Return MenuDefinition[] for one module or all modules.
+     */
+    public function getDefinitions(
+        ?string $moduleName = null
+    ): array {
+        $modules = $moduleName
+            ? [$this->repository->find($moduleName)]
+            : $this->repository->all();
+
+        $definitions = [];
+
+        foreach ($modules as $module) {
+            if (!$module) {
+                continue;
+            }
+
+            $menuPath = $module->getPath()
+                . '/config/menu.php';
+
+            if (!is_file($menuPath)) {
+                continue;
+            }
+
+            $menu = require $menuPath;
+
+            if (!is_array($menu)) {
+                continue;
+            }
+
+            foreach ($this->builder->build($menu) as $definition) {
+                $definitions[] = $definition;
+            }
+        }
+
+        return $definitions;
+    }
+
+    /**
+     * Return menu definitions filtered by user permissions.
+     *
+     * Groups remain visible when at least one child
+     * remains visible.
+     */
+    public function getMenus(
+        ?string $moduleName = null,
+        bool $filterByUserPermissions = false,
+        $user = null,
+    ): array {
+        $definitions = $this->getDefinitions(
+            $moduleName
+        );
+
+        if (!$filterByUserPermissions) {
+            return $definitions;
+        }
+
+        $user ??= $this->authenticatedUser();
+
+        if (!$user) {
+            return [];
+        }
+
+        return $this->filterDefinitions(
+            $definitions,
+            $user
+        );
+    }
+
+    protected function filterDefinitions(
+        array $definitions,
+        $user
+    ): array {
+        $result = [];
+
+        foreach ($definitions as $definition) {
+            $children = $this->filterDefinitions(
+                $definition->children,
+                $user
+            );
+
+            if ($definition->isGroup()) {
+                if (empty($children)) {
+                    continue;
+                }
+
+                $result[] = new MenuDefinition(
+                    module: $definition->module,
+                    name: $definition->name,
+                    title: $definition->title,
+                    path: $definition->path,
+                    type: $definition->type,
+                    middleware: $definition->middleware,
+                    model: $definition->model,
+                    routes: $definition->routes,
+                    permissions: $definition->permissions,
+                    controllerClass: $definition->controllerClass,
+                    resourceClass: $definition->resourceClass,
+                    schemaName: $definition->schemaName,
+                    children: $children,
+                    config: $definition->config,
+                );
+
+                continue;
+            }
+
+            $permission = $this->viewPermission(
+                $definition
+            );
+
+            if (
+                $permission &&
+                $user->can($permission)
+            ) {
+                $result[] = $definition;
+            }
+        }
+
+        return $result;
+    }
+
+    protected function viewPermission(
+        MenuDefinition $definition
+    ): ?string {
+        return $definition->permissionKey()
+            . '.view';
+    }
+
+    protected function authenticatedUser()
+    {
+        try {
+            return JWTAuth::parseToken()
+                ->authenticate();
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    public function allModules(): array
+    {
+        $modules = $this->repository->all();
+
+        $names = [];
+
+        foreach ($modules as $module) {
+            $names[] = $module->getName();
+        }
+
+        return $names;
+    }
+}
+
+```
+
+### src/Foundation/Support/PermissionDefinition.php
+
+```php
+<?php
+
+namespace Bitsnio\AsasFlow\Foundation\Support;
+
+class PermissionDefinition
+{
+    public function __construct(
+        public readonly string $name,
+        public readonly string $description,
+        public readonly string $guard = 'api',
+        public readonly ?string $module = null,
+        public readonly ?string $menuPath = null,
+        public readonly ?string $method = null,
+    ) {}
+
+    public function toArray(): array
+    {
+        return [
+            'name' => $this->name,
+            'description' => $this->description,
+            'guard_name' => $this->guard,
+            'module' => $this->module,
+            'menu_path' => $this->menuPath,
+            'method' => $this->method,
+        ];
+    }
+}
+
+```
+
+### src/Foundation/Support/PermissionResolver.php
+
+```php
+<?php
+
+namespace Bitsnio\AsasFlow\Foundation\Support;
+
+use Illuminate\Http\Request;
+use Illuminate\Support\Str;
+
+class PermissionResolver
+{
+    protected array $methodMap = [
+        'GET' => 'view',
+        'POST' => 'create',
+        'PUT' => 'update',
+        'PATCH' => 'update',
+        'DELETE' => 'delete',
+    ];
+
+    public function resolve(
+        string $uri,
+        string $method
+    ): ?string {
+        $action = $this->actionForMethod($method);
+
+        if (!$action) {
+            return null;
+        }
+
+        $uri = $this->normalizeUri($uri);
+
+        if ($uri === '') {
+            return null;
+        }
+
+        $parts = collect(
+            explode('/', $uri)
+        )
+            ->filter()
+            ->map(function ($part) {
+                if ($this->isParameter($part)) {
+                    return null;
+                }
+
+                return Str::kebab($part);
+            })
+            ->filter()
+            ->values()
+            ->all();
+
+        if (empty($parts)) {
+            return null;
+        }
+
+        return implode('.', $parts)
+            . '.'
+            . $action;
+    }
+
+    public function resolveRequest(
+        Request $request
+    ): ?string {
+        return $this->resolve(
+            $request->path(),
+            $request->method()
+        );
+    }
+
+    public function actionForMethod(
+        string $method
+    ): ?string {
+        return $this->methodMap[
+            strtoupper($method)
+        ] ?? null;
+    }
+
+    protected function normalizeUri(
+        string $uri
+    ): string {
+        $uri = trim($uri, '/');
+
+        if (Str::startsWith($uri, 'api/')) {
+            $uri = substr($uri, 4);
+        }
+
+        return trim($uri, '/');
+    }
+
+    protected function isParameter(
+        string $part
+    ): bool {
+        return preg_match(
+            '/^\{[^}]+\}$/',
+            $part
+        ) === 1;
+    }
+}
+```
+
+### src/Foundation/Support/PermissionService.php
+
+```php
+<?php
+
+namespace Bitsnio\AsasFlow\Foundation\Support;
+
+use Illuminate\Support\Collection;
+use Spatie\Permission\Models\Permission;
+use Spatie\Permission\Models\Role;
+use Spatie\Permission\PermissionRegistrar;
+use Bitsnio\Modules\Contracts\RepositoryInterface;
+
+class PermissionService
+{
+    public function __construct(
+        protected MenuService $menuService,
+    ) {}
+
+    /**
+     * Build all permission definitions.
+     *
+     * @return PermissionDefinition[]
+     */
+    public function getDefinitions(
+        ?string $moduleName = null
+    ): array {
+        $definitions = [];
+
+        foreach (
+            $this->menuService->getDefinitions(
+                $moduleName
+            ) as $menu
+        ) {
+            $this->buildPermissions(
+                $menu,
+                $definitions
+            );
+        }
+
+        return $definitions;
+    }
+
+    protected function buildPermissions(
+        MenuDefinition $definition,
+        array &$permissions
+    ): void {
+        if ($definition->isResource()) {
+            foreach (
+                [
+                    'view' => 'View',
+                    'create' => 'Create',
+                    'update' => 'Update',
+                    'delete' => 'Delete',
+                ] as $action => $label
+            ) {
+                $permissions[] =
+                    $this->makePermission(
+                        $definition,
+                        $action,
+                        $label
+                    );
+            }
+        }
+
+        if ($definition->isAction()) {
+            $permissions[] =
+                $this->makePermission(
+                    $definition,
+                    'execute',
+                    'Execute'
+                );
+        }
+
+        foreach (
+            $definition->children
+            as $child
+        ) {
+            $this->buildPermissions(
+                $child,
+                $permissions
+            );
+        }
+    }
+
+    protected function makePermission(
+        MenuDefinition $definition,
+        string $action,
+        string $label
+    ): PermissionDefinition {
+        $name =
+            $definition->permissionKey()
+            . '.'
+            . $action;
+
+        $custom =
+            $definition->permissions[$action]
+            ?? null;
+
+        $description =
+            is_string($custom)
+            ? $custom
+            : (
+                is_array($custom)
+                ? (
+                    $custom['description']
+                    ?? "{$label} {$definition->title}"
+                )
+                : "{$label} {$definition->title}"
+            );
+
+        return new PermissionDefinition(
+            name: $name,
+            description: $description,
+            guard: 'api',
+            module: $definition->module,
+            menuPath: $definition->permissionKey(),
+            method: $definition->isAction()
+                ? $definition->actionMethod()
+                : null,
+        );
+    }
+
+    /**
+     * Sync menu permissions to Spatie.
+     */
+    public function syncPermissions(
+        ?string $moduleName = null
+    ): void {
+        foreach (
+            $this->getDefinitions($moduleName)
+            as $definition
+        ) {
+            Permission::updateOrCreate(
+                [
+                    'name' => $definition->name,
+                    'guard_name' => $definition->guard,
+                ],
+                [
+                    'description' =>
+                    $definition->description,
+                ]
+            );
+        }
+
+        app(
+            PermissionRegistrar::class
+        )->forgetCachedPermissions();
+    }
+
+    /**
+     * Get all permissions.
+     */
+    public function getAllPermissions(
+        ?string $moduleName = null,
+        bool $labelValueFormat = false
+    ): array {
+        $definitions =
+            $this->getDefinitions(
+                $moduleName
+            );
+
+        if (!$labelValueFormat) {
+            return array_map(
+                fn(PermissionDefinition $permission) =>
+                $permission->toArray(),
+                $definitions
+            );
+        }
+
+        return array_map(
+            fn(PermissionDefinition $permission) => [
+                'label' =>
+                $permission->description,
+
+                'value' =>
+                $permission->name,
+            ],
+            $definitions
+        );
+    }
+
+    /**
+     * Get the permission required for a route.
+     */
+    public function getRequiredPermission(
+        string $route,
+        string $method
+    ): ?string {
+        return app(
+            PermissionResolver::class
+        )->resolve(
+            $route,
+            $method
+        );
+    }
+
+    public function getRolePermissions(
+        string $roleName
+    ): Collection {
+        $role = Role::where(
+            'name',
+            $roleName
+        )->firstOrFail();
+
+        return $role
+            ->permissions()
+            ->orderBy('name')
+            ->get();
+    }
+
+    public function updateRolePermissions(
+        string $roleName,
+        array $permissionNames
+    ): Role {
+        $role = Role::where(
+            'name',
+            $roleName
+        )->firstOrFail();
+
+        $role->syncPermissions(
+            Permission::whereIn(
+                'name',
+                $permissionNames
+            )
+                ->where(
+                    'guard_name',
+                    'api'
+                )
+                ->get()
+        );
+
+        return $role;
+    }
+}
+
 ```
 
 ### src/Foundation/Support/StubRenderer.php
@@ -810,15 +2186,18 @@ namespace Bitsnio\AsasFlow\Generators\Controller;
 
 use Bitsnio\AsasFlow\Foundation\Contracts\GeneratorInterface;
 use Bitsnio\AsasFlow\Foundation\Support\FileHandler;
+use Bitsnio\AsasFlow\Foundation\Support\GeneratedBlock;
 use Bitsnio\AsasFlow\Foundation\Support\StubRenderer;
-use Bitsnio\AsasFlow\Generators\Menu\MenuDefinition;
+use Bitsnio\AsasFlow\Foundation\Support\MenuDefinition;
+use Bitsnio\AsasFlow\Generators\Schema\SchemaDefinition;
+use Bitsnio\AsasFlow\Foundation\Support\GeneratorSupport;
 
-class ControllerGenerator
-    implements GeneratorInterface
+class ControllerGenerator implements GeneratorInterface
 {
     public function __construct(
         protected FileHandler $files,
         protected StubRenderer $stubs,
+        protected GeneratorSupport $support
     ) {}
 
     public function generate(
@@ -858,13 +2237,66 @@ class ControllerGenerator
         return $results;
     }
 
+    public function syncFromSchema(
+        $module,
+        MenuDefinition $definition,
+        SchemaDefinition $schema
+    ): array {
+        if (!$definition->hasController()) {
+            return [
+                'action' => 'skipped',
+            ];
+        }
+
+        $path =
+            $this->files->getControllerPath(
+                $module,
+                $definition->controllerRelativePath()
+            );
+
+        if (!$this->files->exists($path)) {
+            return [
+                'action' => 'missing',
+                'path' => $path,
+            ];
+        }
+
+        $document =
+            $this->files->read($path);
+
+        if (
+            !GeneratedBlock::has(
+                $document,
+                'methods'
+            )
+        ) {
+            return [
+                'action' => 'skipped-no-marker',
+                'path' => $path,
+            ];
+        }
+
+        $this->files->updateGeneratedBlock(
+            $path,
+            'methods',
+            $this->methods(
+                $definition
+            )
+        );
+
+        return [
+            'action' => 'updated',
+            'path' => $path,
+        ];
+    }
+
     protected function generateNode(
         $module,
         MenuDefinition $definition,
         array $options,
         array &$results
     ): void {
-        if ($definition->controllerClass) {
+        if ($definition->hasController()) {
             $relative =
                 $definition->controllerRelativePath();
 
@@ -877,13 +2309,10 @@ class ControllerGenerator
             $exists =
                 $this->files->exists($path);
 
-            if (
-                !$exists ||
-                ($options['force'] ?? false)
-            ) {
+            if (!$exists) {
                 $this->files->writeFile(
                     $path,
-                    $this->buildContent(
+                    $this->content(
                         $module,
                         $definition
                     ),
@@ -893,21 +2322,23 @@ class ControllerGenerator
 
             $results[] = [
                 'name' =>
-                    $definition->controllerClass,
+                $definition->controllerClass,
+
                 'path' => $relative,
+
                 'full_path' => $path,
+
                 'action' =>
-                    !$exists
-                        ? 'created'
-                        : (
-                            ($options['force'] ?? false)
-                                ? 'updated'
-                                : 'skipped'
-                        ),
+                $exists
+                    ? 'skipped'
+                    : 'created',
             ];
         }
 
-        foreach ($definition->children as $child) {
+        foreach (
+            $definition->children
+            as $child
+        ) {
             $this->generateNode(
                 $module,
                 $child,
@@ -922,29 +2353,29 @@ class ControllerGenerator
         MenuDefinition $definition,
         array &$results
     ): void {
-        if ($definition->controllerClass) {
-            $relative =
-                $definition->controllerRelativePath();
-
+        if ($definition->hasController()) {
             $path =
                 $this->files->getControllerPath(
                     $module,
-                    $relative
+                    $definition->controllerRelativePath()
                 );
 
             $results[] = [
                 'action' =>
-                    $this->files->exists($path)
-                        ? 'update'
-                        : 'create',
+                $this->files->exists($path)
+                    ? 'keep'
+                    : 'create',
+
                 'file' => $path,
+
                 'type' => 'controller',
-                'name' =>
-                    $definition->controllerClass,
             ];
         }
 
-        foreach ($definition->children as $child) {
+        foreach (
+            $definition->children
+            as $child
+        ) {
             $this->previewNode(
                 $module,
                 $child,
@@ -953,121 +2384,78 @@ class ControllerGenerator
         }
     }
 
-    protected function buildContent(
+    protected function content(
         $module,
         MenuDefinition $definition
     ): string {
-        $modelClass =
-            $definition->modelClass();
-
-        $modelPath =
-            $module->getPath()
-            . '/App/Models/'
-            . $modelClass
-            . '.php';
-
-        $requestClass =
-            $definition->requestClass();
-
-        $requestPath =
-            $module->getPath()
-            . '/App/Http/Requests/'
-            . $requestClass
-            . '.php';
-
-        $resourceClass =
-            $definition->resourceClass;
-
-        $resourcePath = $resourceClass
-            ? $this->files->getResourcePath(
-                $module,
-                $definition->resourceRelativePath()
-            )
-            : null;
-
-        $hasModel =
-            $this->files->exists($modelPath);
-
-        $hasRequest =
-            $this->files->exists($requestPath);
-
-        $hasResource =
-            $resourcePath
-                ? $this->files->exists(
-                    $resourcePath
-                )
-                : false;
-
-        $resourceImport = $hasResource
-            ? "use Modules\\{$module->getName()}"
-                . "\\App\\Http\\Resources\\"
-                . str_replace(
-                    '/',
-                    '\\',
-                    $definition->resourceRelativePath()
-                )
-                . ';'
-            : '';
-
         return $this->stubs->renderFile(
             'controller.stub',
             [
-                'NAMESPACE' =>
-                    $this->namespace(
-                        $module,
-                        $definition
-                    ),
+                'NAMESPACE' => $this->support->controllerNamespace(
+                    $module,
+                    $definition
+                ),
 
-                'CLASS' =>
-                    $definition->controllerClass,
+                'CLASS' => $definition->controllerClass,
 
-                'MODEL_IMPORT' =>
-                    $hasModel
-                        ? "use Modules\\{$module->getName()}"
-                            . "\\App\\Models\\{$modelClass};"
-                        : '',
+                'IMPORTS' => $this->imports(
+                    $module,
+                    $definition
+                ),
 
-                'REQUEST_IMPORT' =>
-                    $hasRequest
-                        ? "use Modules\\{$module->getName()}"
-                            . "\\App\\Http\\Requests\\{$requestClass};"
-                        : '',
+                'TRAIT_IMPORTS' => $this->support->traitImports(
+                    'controller'
+                ),
 
-                'RESOURCE_IMPORT' =>
-                    $resourceImport,
+                'TRAITS' => $this->support->traitUsage(
+                    'controller'
+                ),
 
-                'METHODS' =>
-                    $this->methods(
-                        $definition,
-                        $hasModel,
-                        $hasRequest,
-                        $hasResource
-                    ),
+                'METHODS' => $this->methods($definition),
             ]
         );
     }
 
-    protected function namespace(
+
+    protected function imports(
         $module,
         MenuDefinition $definition
     ): string {
-        $namespace =
-            "Modules\\{$module->getName()}"
-            . "\\App\\Http\\Controllers";
+        $imports = [];
 
-        $relative =
-            $definition->controllerNamespace();
+        $actions = $definition->routeActions();
 
-        return $relative
-            ? $namespace . '\\' . $relative
-            : $namespace;
+        if (
+            in_array('store', $actions, true) ||
+            in_array('update', $actions, true)
+        ) {
+            $imports[] = $this->support->requestNamespace(
+                $module,
+                $definition
+            ) . '\\' . $definition->requestClass();
+        }
+
+        if ($definition->model) {
+            $imports[] = $this->support->modelNamespace(
+                $module
+            ) . '\\' . $definition->modelClass();
+        }
+
+        if ($definition->hasResource()) {
+            $imports[] = $this->support->resourceNamespace(
+                $module,
+                $definition
+            ) . '\\' . $definition->resourceClass;
+        }
+
+        return $this->support->generatorImports(
+            'controller',
+            $imports
+        );
     }
 
     protected function methods(
-        MenuDefinition $definition,
-        bool $hasModel,
-        bool $hasRequest,
-        bool $hasResource
+        MenuDefinition $definition
     ): string {
         $methods = [];
 
@@ -1075,202 +2463,243 @@ class ControllerGenerator
             $definition->routeActions()
             as $action
         ) {
-            $methods[] = match ($action) {
-                'index' =>
+            $methods[] =
+                match ($action) {
+                    'index' =>
                     $this->indexMethod(
-                        $definition,
-                        $hasModel,
-                        $hasResource
+                        $definition
                     ),
 
-                'store' =>
+                    'store' =>
                     $this->storeMethod(
-                        $definition,
-                        $hasModel,
-                        $hasRequest,
-                        $hasResource
+                        $definition
                     ),
 
-                'show' =>
+                    'show' =>
                     $this->showMethod(
-                        $definition,
-                        $hasModel,
-                        $hasResource
+                        $definition
                     ),
 
-                'update' =>
+                    'update' =>
                     $this->updateMethod(
-                        $definition,
-                        $hasModel,
-                        $hasRequest,
-                        $hasResource
+                        $definition
                     ),
 
-                'destroy' =>
+                    'destroy' =>
                     $this->destroyMethod(
-                        $definition,
-                        $hasModel
+                        $definition
                     ),
 
-                default =>
-                    throw new \InvalidArgumentException(
-                        "Unsupported route action [{$action}]."
-                    ),
-            };
+                    default => '',
+                };
         }
 
         return implode(
-            "\n\n",
-            $methods
+            PHP_EOL . PHP_EOL,
+            array_filter($methods)
         );
     }
 
     protected function indexMethod(
-        MenuDefinition $d,
-        bool $hasModel,
-        bool $hasResource
+        MenuDefinition $definition
     ): string {
-        $body = $hasModel
-            ? (
-                $hasResource
-                    ? "return {$d->resourceClass}::collection("
-                        . "{$d->modelClass()}::paginate());"
-                    : "return {$d->modelClass()}::paginate();"
+
+        if (!$definition->model) {
+            return <<<'PHP'
+                public function index()
+                {
+                    return response()->json([
+                        'message' => 'Index not implemented',
+                    ], 501);
+                }
+            PHP;
+        }
+
+        $paginationEnabled = $this->support->featureEnabled(
+            'controller',
+            'pagination'
+        );
+
+        $paginationConfig = $this->support->featureConfig(
+            'controller',
+            'pagination',
+            []
+        );
+
+        $perPage = is_array($paginationConfig)
+            ? filter_var(
+                $paginationConfig['per_page'] ?? 20,
+                FILTER_VALIDATE_INT,
+                ['options' => ['min_range' => 1]]
             )
-            : 'return response()->json([]);';
+            : 20;
+
+        $perPage = $perPage ?: 20;
+
+        $pagination = $paginationEnabled
+            ? "paginate({$perPage})"
+            : 'paginate()';
+
+        $query = $definition->modelClass() . "::{$pagination}";
+
+        if ($definition->hasResource()) {
+            return <<<PHP
+                public function index()
+                {
+                    return {$definition->resourceClass}::collection(
+                        {$query}
+                    );
+                }
+            PHP;
+        }
 
         return <<<PHP
-    public function index()
-    {
-        {$body}
-    }
-PHP;
+                    public function index()
+                    {
+                        return {$query};
+                    }
+                PHP;
     }
 
     protected function storeMethod(
-        MenuDefinition $d,
-        bool $hasModel,
-        bool $hasRequest,
-        bool $hasResource
+        MenuDefinition $definition
     ): string {
-        if (!$hasModel) {
-            $body =
-                "return response()->json("
-                . "['message' => 'Store not implemented'], "
-                . "501);";
-        } else {
-            $request =
-                $hasRequest
-                    ? '$request->validated()'
-                    : '$request->all()';
-
-            $body =
-                "\$item = {$d->modelClass()}"
-                . "::create({$request});\n\n        "
-                . (
-                    $hasResource
-                        ? "return new {$d->resourceClass}(\$item);"
-                        : 'return $item;'
-                );
+        if (!$definition->model) {
+            return <<<PHP
+                public function store(
+                    {$definition->requestClass()} \$request
+                ) {
+                    return response()->json([
+                        'message' => 'Store not implemented',
+                    ], 501);
+                }
+            PHP;
         }
 
+        $return =
+            $definition->hasResource()
+            ? 'return new '
+            . $definition->resourceClass
+            . '($item);'
+            : 'return $item;';
+
         return <<<PHP
-    public function store(Request \$request)
-    {
-        {$body}
-    }
-PHP;
+            public function store(
+                {$definition->requestClass()} \$request
+            ) {
+                \$item = {$definition->modelClass()}::create(
+                    \$request->validated()
+                );
+
+                {$return}
+            }
+        PHP;
     }
 
     protected function showMethod(
-        MenuDefinition $d,
-        bool $hasModel,
-        bool $hasResource
+        MenuDefinition $definition
     ): string {
-        $variable =
-            $d->parameterName();
+        $parameter =
+            $definition->parameterName();
 
-        $body = !$hasModel
-            ? "return response()->json("
-                . "['message' => 'Show not implemented'], "
-                . "501);"
-            : (
-                $hasResource
-                    ? "return new {$d->resourceClass}"
-                        . "(\${$variable});"
-                    : "return \${$variable};"
-            );
+        if (!$definition->model) {
+            return <<<PHP
+                public function show(
+                    \${$parameter}
+                ) {
+                    return response()->json([
+                        'message' => 'Show not implemented',
+                    ], 501);
+                }
+            PHP;
+        }
+
+        $return =
+            $definition->hasResource()
+            ? 'return new '
+            . $definition->resourceClass
+            . "(\${$parameter});"
+            : "return \${$parameter};";
 
         return <<<PHP
-    public function show(\${$variable})
-    {
-        {$body}
-    }
-PHP;
+                    public function show(
+                        {$definition->modelClass()} \${$parameter}
+                    ) {
+                        {$return}
+                    }
+                PHP;
     }
 
     protected function updateMethod(
-        MenuDefinition $d,
-        bool $hasModel,
-        bool $hasRequest,
-        bool $hasResource
+        MenuDefinition $definition
     ): string {
-        $variable =
-            $d->parameterName();
+        $parameter =
+            $definition->parameterName();
 
-        if (!$hasModel) {
-            $body =
-                "return response()->json("
-                . "['message' => 'Update not implemented'], "
-                . "501);";
-        } else {
-            $request =
-                $hasRequest
-                    ? '$request->validated()'
-                    : '$request->all()';
-
-            $body =
-                "\${$variable}->update({$request});\n\n        "
-                . (
-                    $hasResource
-                        ? "return new {$d->resourceClass}"
-                            . "(\${$variable});"
-                        : "return \${$variable};"
-                );
+        if (!$definition->model) {
+            return <<<PHP
+    public function update(
+        {$definition->requestClass()} \$request,
+        \${$parameter}
+    ) {
+        return response()->json([
+            'message' => 'Update not implemented',
+        ], 501);
+    }
+PHP;
         }
+
+        $return =
+            $definition->hasResource()
+            ? 'return new '
+            . $definition->resourceClass
+            . "(\${$parameter});"
+            : "return \${$parameter};";
 
         return <<<PHP
     public function update(
-        Request \$request,
-        \${$variable}
+        {$definition->requestClass()} \$request,
+        {$definition->modelClass()} \${$parameter}
     ) {
-        {$body}
+        \${$parameter}->update(
+            \$request->validated()
+        );
+
+        {$return}
     }
 PHP;
     }
 
     protected function destroyMethod(
-        MenuDefinition $d,
-        bool $hasModel
+        MenuDefinition $definition
     ): string {
-        $variable =
-            $d->parameterName();
+        $parameter =
+            $definition->parameterName();
 
-        $body = $hasModel
-            ? "\${$variable}->delete();\n\n"
-                . "        return response()->noContent();"
-            : "return response()->json("
-                . "['message' => 'Destroy not implemented'], "
-                . "501);";
+        if (!$definition->model) {
+            return <<<PHP
+    public function destroy(
+        \${$parameter}
+    ) {
+        return response()->json([
+            'message' => 'Destroy not implemented',
+        ], 501);
+    }
+PHP;
+        }
 
         return <<<PHP
-    public function destroy(\${$variable})
-    {
-        {$body}
+    public function destroy(
+        {$definition->modelClass()} \${$parameter}
+    ) {
+        \${$parameter}->delete();
+
+        return response()->noContent();
     }
 PHP;
     }
 }
+
 ```
 
 ### src/Generators/Menu/MenuBuilder.php
@@ -1280,29 +2709,40 @@ PHP;
 
 namespace Bitsnio\AsasFlow\Generators\Menu;
 
+use Bitsnio\AsasFlow\Foundation\Support\MenuDefinition;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
 
 class MenuBuilder
 {
+    protected const TYPES = [
+        'resource',
+        'action',
+    ];
+
+    protected const ACTION_METHODS = [
+        'GET',
+        'POST',
+        'PUT',
+        'PATCH',
+        'DELETE',
+    ];
+
     public function build(array $menu): array
     {
         $module = $menu['module'] ?? null;
 
         if (!is_array($module)) {
             throw new InvalidArgumentException(
-                'Missing module configuration.'
+                'Menu configuration must contain a module array.'
             );
         }
 
         $moduleName = $module['name'] ?? null;
 
-        if (
-            !is_string($moduleName) ||
-            trim($moduleName) === ''
-        ) {
+        if (!$moduleName) {
             throw new InvalidArgumentException(
-                'Module name is required.'
+                'Menu module name is required.'
             );
         }
 
@@ -1331,20 +2771,6 @@ class MenuBuilder
         return $flat;
     }
 
-    protected function flattenNode(
-        MenuDefinition $definition,
-        array &$flat
-    ): void {
-        $flat[$definition->permissionKey()] = $definition;
-
-        foreach ($definition->children as $child) {
-            $this->flattenNode(
-                $child,
-                $flat
-            );
-        }
-    }
-
     protected function buildNode(
         array $config,
         string $moduleName,
@@ -1353,12 +2779,9 @@ class MenuBuilder
     ): MenuDefinition {
         $name = $config['name'] ?? null;
 
-        if (
-            !is_string($name) ||
-            trim($name) === ''
-        ) {
+        if (!$name) {
             throw new InvalidArgumentException(
-                'Every menu node must contain a non-empty name.'
+                'Every menu item must have a name.'
             );
         }
 
@@ -1367,33 +2790,108 @@ class MenuBuilder
             $name,
         ];
 
+        /*
+        |--------------------------------------------------------------------------
+        | Type
+        |--------------------------------------------------------------------------
+        |
+        | No type means group.
+        |
+        */
+
+        $type = $config['type'] ?? 'group';
+
+        if (!in_array(
+            $type,
+            ['group', ...self::TYPES],
+            true
+        )) {
+            throw new InvalidArgumentException(
+                "Invalid menu type [{$type}] "
+                    . "for [{$name}]. "
+                    . "Allowed types: resource, action."
+            );
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | Middleware
+        |--------------------------------------------------------------------------
+        */
+
         $middleware = $this->middleware(
             $inheritedMiddleware,
             $config['middleware'] ?? [],
-            empty($inheritedMiddleware) &&
-                !isset($config['middleware'])
+            empty($inheritedMiddleware)
+                && !isset($config['middleware'])
                 ? ['api']
                 : []
         );
 
-        $type = $config['type']
-            ?? (
-                !empty($config['children'])
-                ? 'group'
-                : 'resource'
-            );
+        /*
+        |--------------------------------------------------------------------------
+        | Children
+        |--------------------------------------------------------------------------
+        */
 
-        if (!in_array(
-            $type,
-            ['group', 'resource'],
-            true
-        )) {
-            throw new InvalidArgumentException(
-                "Invalid type [{$type}] for ["
-                    . implode('.', $path)
-                    . ']. Use group or resource.'
+        $children = [];
+
+        foreach (
+            ($config['children'] ?? [])
+            as $child
+        ) {
+            if (!is_array($child)) {
+                continue;
+            }
+
+            $children[] = $this->buildNode(
+                $child,
+                $moduleName,
+                $path,
+                $middleware
             );
         }
+
+        /*
+        |--------------------------------------------------------------------------
+        | Action Validation
+        |--------------------------------------------------------------------------
+        */
+
+        if ($type === 'action') {
+            if (!empty($children)) {
+                throw new InvalidArgumentException(
+                    "Action [{$name}] "
+                        . "cannot contain children."
+                );
+            }
+
+            $method = strtoupper(
+                $config['method'] ?? 'POST'
+            );
+
+            if (!in_array(
+                $method,
+                self::ACTION_METHODS,
+                true
+            )) {
+                throw new InvalidArgumentException(
+                    "Invalid method [{$method}] "
+                        . "for action [{$name}]. "
+                        . "Allowed methods: "
+                        . implode(
+                            ', ',
+                            self::ACTION_METHODS
+                        )
+                );
+            }
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | Component Defaults
+        |--------------------------------------------------------------------------
+        */
 
         $controllerClass =
             $this->controllerClass(
@@ -1407,31 +2905,20 @@ class MenuBuilder
                 $type
             );
 
+        /*
+        |--------------------------------------------------------------------------
+        | Schema
+        |--------------------------------------------------------------------------
+        */
+
         $schemaName = null;
 
-        if (($config['model'] ?? false) === true) {
+        if (
+            ($config['model'] ?? false) === true
+        ) {
             $schemaName =
                 $config['schema']['name']
                 ?? Str::studly($name);
-        }
-
-        $children = [];
-
-        foreach ($config['children'] ?? [] as $child) {
-            if (!is_array($child)) {
-                throw new InvalidArgumentException(
-                    'Every children entry must be an array at ['
-                        . implode('.', $path)
-                        . '].'
-                );
-            }
-
-            $children[] = $this->buildNode(
-                $child,
-                $moduleName,
-                $path,
-                $middleware
-            );
         }
 
         return new MenuDefinition(
@@ -1467,297 +2954,595 @@ class MenuBuilder
         array $config,
         string $type
     ): ?string {
+        $controller = $config['controller'] ?? null;
+
+        /*
+        | Explicitly disabled.
+        */
         if (
-            ($config['controller']['enabled']
-                ?? true) === false
+            is_array($controller)
+            && ($controller['enabled'] ?? true) === false
         ) {
             return null;
         }
 
+        /*
+        | Explicit class.
+        */
         if (
-            $type !== 'resource' &&
-            !isset($config['controller']['class'])
+            is_array($controller)
+            && !empty($controller['class'])
         ) {
+            return $controller['class'];
+        }
+
+        /*
+        | Groups don't get controllers automatically.
+        */
+        if ($type === 'group') {
             return null;
         }
 
-        return $config['controller']['class']
-            ?? Str::studly($config['name'])
-            . 'Controller';
+        /*
+        | Resource default.
+        */
+        if ($type === 'resource') {
+            return Str::studly(
+                $config['name']
+            ) . 'Controller';
+        }
+
+        /*
+        | Action default.
+        |
+        | We only generate the controller class.
+        | No controller method is assumed.
+        */
+        if ($type === 'action') {
+            return Str::studly(
+                $config['name']
+            ) . 'Controller';
+        }
+
+        return null;
     }
 
     protected function resourceClass(
         array $config,
         string $type
     ): ?string {
+        /*
+        | Actions and groups don't have API resources.
+        */
         if (
-            ($config['resource']['enabled']
-                ?? true) === false
+            $type !== 'resource'
+        ) {
+            return null;
+        }
+
+        $resource = $config['resource'] ?? null;
+
+        if (
+            is_array($resource)
+            && ($resource['enabled'] ?? true) === false
         ) {
             return null;
         }
 
         if (
-            $type !== 'resource' &&
-            !isset($config['resource']['class'])
+            is_array($resource)
+            && !empty($resource['class'])
         ) {
-            return null;
+            return $resource['class'];
         }
 
-        return $config['resource']['class']
-            ?? Str::studly($config['name'])
-            . 'Resource';
+        return Str::studly(
+            $config['name']
+        ) . 'Resource';
     }
 
     protected function middleware(
-        array ...$sets
+        array $inherited,
+        array $current,
+        array $defaults = []
     ): array {
-        $result = [];
+        return array_values(
+            array_unique([
+                ...$inherited,
+                ...$defaults,
+                ...$current,
+            ])
+        );
+    }
 
-        foreach ($sets as $set) {
-            foreach ($set as $middleware) {
-                if (!in_array(
-                    $middleware,
-                    $result,
-                    true
-                )) {
-                    $result[] = $middleware;
-                }
-            }
+    protected function flattenNode(
+        MenuDefinition $definition,
+        array &$flat
+    ): void {
+        $flat[$definition->permissionKey()] = $definition;
+
+        foreach (
+            $definition->children
+            as $child
+        ) {
+            $this->flattenNode(
+                $child,
+                $flat
+            );
         }
-
-        return $result;
     }
 }
 
 ```
 
-### src/Generators/Menu/MenuDefinition.php
+### src/Generators/Menu/MenuGenerator.php
 
 ```php
 <?php
 
 namespace Bitsnio\AsasFlow\Generators\Menu;
 
+use Bitsnio\AsasFlow\Foundation\Support\FileHandler;
+use Bitsnio\AsasFlow\Foundation\Support\StubRenderer;
+use Illuminate\Console\View\Components\Factory as ComponentFactory;
 use Illuminate\Support\Str;
+use RuntimeException;
 
-class MenuDefinition
+class MenuGenerator
 {
     public function __construct(
-        public readonly string $module,
-        public readonly string $name,
-        public readonly string $title,
-        public readonly array $path,
-        public readonly string $type,
-        public readonly array $middleware = [],
-        public readonly bool $model = false,
-        public readonly array $routes = [],
-        public readonly array $permissions = [],
-        public readonly ?string $controllerClass = null,
-        public readonly ?string $resourceClass = null,
-        public readonly ?string $schemaName = null,
-        public readonly array $children = [],
-        public readonly array $config = [],
+        protected FileHandler $files,
+        protected StubRenderer $stubs,
     ) {}
 
-    public function isGroup(): bool
-    {
-        return $this->type === 'group';
-    }
+    /**
+     * Generate menu configuration file.
+     */
+    public function generate(
+        $module,
+        string $moduleName,
+        ?ComponentFactory $component = null
+    ): void {
+        $path = $module->getPath()
+            . '/config/menu.php';
 
-    public function isResource(): bool
-    {
-        return $this->type === 'resource';
-    }
+        try {
+            $content = $this->getStubContents(
+                $moduleName
+            );
 
-    public function routePath(): string
-    {
-        return implode(
-            '/',
-            array_map(
-                [Str::class, 'kebab'],
-                $this->path
-            )
-        );
-    }
+            $this->files->writeFile(
+                $path,
+                $content,
+                false
+            );
 
-    public function permissionKey(): string
-    {
-        return implode(
-            '.',
-            array_map(
-                [Str::class, 'kebab'],
-                $this->path
-            )
-        );
-    }
-
-    public function controllerNamespace(): string
-    {
-        return $this->relativeNamespace(
-            array_slice($this->path, 1, -1)
-        );
-    }
-
-    public function controllerRelativePath(): string
-    {
-        $namespace = $this->controllerNamespace();
-
-        return ($namespace
-            ? str_replace('\\', '/', $namespace) . '/'
-            : '')
-            . $this->controllerClass;
-    }
-
-    public function resourceNamespace(): string
-    {
-        return $this->relativeNamespace(
-            array_slice($this->path, 1, -1)
-        );
-    }
-
-    public function resourceRelativePath(): string
-    {
-        $namespace = $this->resourceNamespace();
-
-        return ($namespace
-            ? str_replace('\\', '/', $namespace) . '/'
-            : '')
-            . $this->resourceClass;
-    }
-
-    protected function relativeNamespace(
-        array $segments
-    ): string {
-        return implode(
-            '\\',
-            array_map(
-                [Str::class, 'studly'],
-                $segments
-            )
-        );
-    }
-
-    public function modelClass(): string
-    {
-        return $this->config['model_name']
-            ?? $this->config['model']['class']
-            ?? Str::studly($this->name);
-    }
-
-    public function requestClass(): string
-    {
-        return $this->config['request_name']
-            ?? $this->config['request']['class']
-            ?? $this->modelClass() . 'Request';
-    }
-
-    public function routeActions(): array
-    {
-        if (!empty($this->routes)) {
-            return array_values(
-                array_unique($this->routes)
+            $component?->info(
+                "Generated menu config at: {$path}"
+            );
+        } catch (\Throwable $e) {
+            throw new RuntimeException(
+                'MenuGenerator failed: '
+                . $e->getMessage(),
+                0,
+                $e
             );
         }
-
-        return match ($this->config['routes_type'] ?? 'full') {
-            'index', 'list' => ['index'],
-            'create', 'store' => ['store'],
-            'show' => ['show'],
-            'update' => ['update'],
-            'delete', 'destroy' => ['destroy'],
-            default => [
-                'index',
-                'store',
-                'show',
-                'update',
-                'destroy',
-            ],
-        };
     }
 
-    public function parameterName(): string
-    {
-        return Str::camel($this->modelClass());
+    /**
+     * Get rendered menu stub.
+     */
+    protected function getStubContents(
+        string $moduleName
+    ): string {
+        return $this->stubs->renderFile(
+            'Menu.stub',
+            [
+                'MODULE_NAME' => $moduleName,
+                'TITLE' => Str::headline(
+                    $moduleName
+                ),
+            ]
+        );
     }
 }
-
 ```
 
-### src/Generators/MenuGenerator.php
+### src/Generators/Migration/MigrationGenerator.php
 
 ```php
 <?php
 
-namespace Bitsnio\AsasFlow\Generators;
+namespace Bitsnio\AsasFlow\Generators\Migration;
 
-use Illuminate\Filesystem\Filesystem;
+use Bitsnio\AsasFlow\Foundation\Support\FileHandler;
+use Bitsnio\AsasFlow\Foundation\Support\MenuDefinition;
+use Bitsnio\AsasFlow\Generators\Schema\SchemaDefinition;
 use Illuminate\Support\Str;
-use Illuminate\Console\View\Components\Factory as ComponentFactory;
 
-class MenuGenerator
+class MigrationGenerator
 {
-    protected Filesystem $filesystem;
-    protected $module;
-    protected string $moduleName;
-    protected ?ComponentFactory $component;
+    public function __construct(
+        protected FileHandler $files,
+    ) {}
 
-    public function __construct($module, string $moduleName, ?ComponentFactory $component = null)
-    {
-        $this->filesystem = new Filesystem();
-        $this->module = $module;
-        $this->moduleName = $moduleName;
-        $this->component = $component;
-    }
+    public function generate(
+        $module,
+        MenuDefinition $definition,
+        SchemaDefinition $schema
+    ): array {
+        $migrationPath =
+            $module->getPath()
+            . '/database/migrations';
 
-    /**
-     * Generate menu configuration file
-     */
-    public function generate(): void
-    {
+        $table =
+            $definition->config['model']['table']
+            ?? $definition->config['table']
+            ?? Str::snake(
+                Str::plural(
+                    $definition->modelClass()
+                )
+            );
 
-        $path = $this->module->getModulePath($this->moduleName) . '/Config/menu.php';
+        $existing =
+            $this->findCreateMigration(
+                $migrationPath,
+                $table
+            );
 
-        try {
-            if (!$this->filesystem->isDirectory(dirname($path))) {
-                $this->filesystem->makeDirectory(dirname($path), 0755, true);
-            }
-            $this->filesystem->put($path, $this->getStubContents());
-            $this->component?->info("Generated menu config at: $path");
-        } catch (\Throwable $e) {
-            // Re-throw so the command layer can decide whether to rollback
-            throw new \RuntimeException("MenuGenerator failed: " . $e->getMessage(), 0, $e);
-        }
-    }
-
-    /**
-     * Get menu stub contents
-     */
-    protected function getStubContents(): string
-    {
-        $stubPath = __DIR__ . '/../Console/Commands/Stubs/menu.stub';
-
-        if (!$this->filesystem->exists($stubPath)) {
-            throw new \RuntimeException("Stub file not found at: {$stubPath}");
+        if ($existing) {
+            return [
+                'action' => 'skipped-existing',
+                'path' => $existing,
+            ];
         }
 
-        return $this->replaceStubPlaceholders(
-            $this->filesystem->get($stubPath)
+        $timestamp =
+            date('Y_m_d_His');
+
+        $class =
+            'Create'
+            . Str::studly($table)
+            . 'Table';
+
+        $filename =
+            $timestamp
+            . '_create_'
+            . $table
+            . '_table.php';
+
+        $path =
+            $migrationPath
+            . '/'
+            . $filename;
+
+        $this->files->ensureDirectoryExists(
+            $migrationPath
+        );
+
+        $this->files->writeFile(
+            $path,
+            $this->content(
+                $class,
+                $table,
+                $schema
+            ),
+            true
+        );
+
+        return [
+            'action' => 'created',
+            'path' => $path,
+        ];
+    }
+
+    protected function findCreateMigration(
+        string $directory,
+        string $table
+    ): ?string {
+        if (!$this->files->exists($directory)) {
+            return null;
+        }
+
+        foreach (
+            glob(
+                $directory
+                . '/*_create_'
+                . $table
+                . '_table.php'
+            ) ?: []
+            as $file
+        ) {
+            return $file;
+        }
+
+        return null;
+    }
+
+    protected function content(
+        string $class,
+        string $table,
+        SchemaDefinition $schema
+    ): string {
+        $columns = [];
+
+        foreach (
+            $schema->migrationColumns()
+            as $column
+        ) {
+            $columns[] =
+                $this->column(
+                    $column
+                );
+        }
+
+        $body =
+            implode(
+                PHP_EOL,
+                array_map(
+                    fn ($line) =>
+                        '            '
+                        . $line,
+                    $columns
+                )
+            );
+
+        return <<<PHP
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::create('{$table}', function (Blueprint \$table) {
+            \$table->id();
+{$body}
+            \$table->timestamps();
+            \$table->softDeletes();
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::dropIfExists('{$table}');
+    }
+};
+
+PHP;
+    }
+
+    protected function column(
+        array $column
+    ): string {
+        $name = $column['name'];
+        $type = $column['type'];
+
+        if ($name === 'id') {
+            return '';
+        }
+
+        if (
+            in_array(
+                $name,
+                [
+                    'created_at',
+                    'updated_at',
+                    'deleted_at',
+                ],
+                true
+            )
+        ) {
+            return '';
+        }
+
+        $line = match ($type) {
+            'integer' =>
+                "\$table->integer('{$name}')",
+
+            'number' =>
+                "\$table->decimal('{$name}', 18, 4)",
+
+            'boolean' =>
+                "\$table->boolean('{$name}')",
+
+            'array',
+            'object' =>
+                "\$table->json('{$name}')",
+
+            default =>
+                "\$table->string('{$name}')",
+        };
+
+        if ($column['nullable']) {
+            $line .= '->nullable()';
+        }
+
+        if (
+            $column['default'] !== null
+        ) {
+            $default =
+                var_export(
+                    $column['default'],
+                    true
+                );
+
+            $line .=
+                "->default({$default})";
+        }
+
+        return $line . ';';
+    }
+}
+```
+
+### src/Generators/Model/ModelGenerator.php
+
+```php
+<?php
+
+namespace Bitsnio\AsasFlow\Generators\Model;
+
+use Bitsnio\AsasFlow\Foundation\Support\FileHandler;
+use Bitsnio\AsasFlow\Foundation\Support\GeneratedBlock;
+use Bitsnio\AsasFlow\Foundation\Support\MenuDefinition;
+use Bitsnio\AsasFlow\Generators\Schema\SchemaDefinition;
+
+class ModelGenerator
+{
+    public function __construct(
+        protected FileHandler $files,
+    ) {}
+
+    public function generate(
+        $module,
+        MenuDefinition $definition,
+        SchemaDefinition $schema
+    ): array {
+        $path =
+            $this->files->getModelPath(
+                $module,
+                $definition->modelClass()
+            );
+
+        if (!$this->files->exists($path)) {
+            $this->files->writeFile(
+                $path,
+                $this->content(
+                    $module,
+                    $definition,
+                    $schema
+                ),
+                true
+            );
+
+            return [
+                'action' => 'created',
+                'path' => $path,
+            ];
+        }
+
+        $document =
+            $this->files->read($path);
+
+        if (!GeneratedBlock::has(
+            $document,
+            'generated-fillable'
+        )) {
+            return [
+                'action' => 'skipped-no-marker',
+                'path' => $path,
+            ];
+        }
+
+        $this->files->updateGeneratedBlock(
+            $path,
+            'generated-fillable',
+            $this->buildFillable($schema)
+        );
+
+        $this->files->updateGeneratedBlock(
+            $path,
+            'generated-casts',
+            $this->buildCasts($schema)
+        );
+
+        return [
+            'action' => 'updated',
+            'path' => $path,
+        ];
+    }
+
+    protected function content(
+        $module,
+        MenuDefinition $definition,
+        SchemaDefinition $schema
+    ): string {
+        $namespace =
+            "Modules\\{$module->getName()}\\App\\Models";
+
+        return <<<PHP
+<?php
+
+namespace {$namespace};
+
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
+
+class {$definition->modelClass()} extends Model
+{
+    use SoftDeletes;
+
+    protected \$fillable = [
+        // @asasflow:generated-fillable:start
+        // @asasflow:generated-fillable:end
+    ];
+
+    protected \$casts = [
+        // @asasflow:generated-casts:start
+        // @asasflow:generated-casts:end
+    ];
+}
+
+PHP;
+    }
+
+    protected function buildFillable(
+        SchemaDefinition $schema
+    ): string {
+        $lines = [];
+
+        foreach (
+            array_keys($schema->properties())
+            as $field
+        ) {
+            $lines[] =
+                '        '
+                . var_export(
+                    $field,
+                    true
+                )
+                . ',';
+        }
+
+        return implode(
+            PHP_EOL,
+            $lines
         );
     }
-    /**
-     * Replace stub placeholders
-     */
-    protected function replaceStubPlaceholders(string $stub): string
-    {
-        return str_replace(
-            ['$MODULE_NAME$', '$LOWER_NAME$', '$STUDLY_NAME$'],
-            [$this->moduleName, strtolower($this->moduleName), Str::studly($this->moduleName)],
-            $stub
+
+    protected function buildCasts(
+        SchemaDefinition $schema
+    ): string {
+        $casts = $schema->casts();
+
+        $lines = [];
+
+        foreach ($casts as $field => $cast) {
+            $lines[] =
+                '        '
+                . var_export(
+                    $field,
+                    true
+                )
+                . ' => '
+                . var_export(
+                    $cast,
+                    true
+                )
+                . ',';
+        }
+
+        return implode(
+            PHP_EOL,
+            $lines
         );
     }
 }
-
 ```
 
 ### src/Generators/ModuleSettingsGenerator.php
@@ -2222,23 +4007,26 @@ PHP;
 
 ```
 
-### src/Generators/Resource/ResourceGenerator.php
+### src/Generators/Request/RequestGenerator.php
 
 ```php
 <?php
 
-namespace Bitsnio\AsasFlow\Generators\Resource;
+namespace Bitsnio\AsasFlow\Generators\Request;
 
 use Bitsnio\AsasFlow\Foundation\Contracts\GeneratorInterface;
 use Bitsnio\AsasFlow\Foundation\Support\FileHandler;
+use Bitsnio\AsasFlow\Foundation\Support\GeneratedBlock;
+use Bitsnio\AsasFlow\Foundation\Support\MenuDefinition;
+use Bitsnio\AsasFlow\Generators\Schema\SchemaDefinition;
+use Bitsnio\AsasFlow\Foundation\Support\GeneratorSupport;
 use Bitsnio\AsasFlow\Foundation\Support\StubRenderer;
-use Bitsnio\AsasFlow\Generators\Menu\MenuDefinition;
 
-class ResourceGenerator
-implements GeneratorInterface
+class RequestGenerator implements GeneratorInterface
 {
     public function __construct(
         protected FileHandler $files,
+        protected GeneratorSupport $support,
         protected StubRenderer $stubs,
     ) {}
 
@@ -2279,18 +4067,76 @@ implements GeneratorInterface
         return $results;
     }
 
+    public function syncFromSchema(
+        $module,
+        MenuDefinition $definition,
+        SchemaDefinition $schema
+    ): array {
+        if (!$definition->hasResource()) {
+            return [
+                'action' => 'skipped',
+                'reason' => 'resource-disabled',
+            ];
+        }
+
+        $path = $this->files->getRequestPath(
+            $module,
+            $this->requestRelativePath(
+                $definition
+            )
+        );
+
+        if (!$this->files->exists($path)) {
+            return [
+                'action' => 'missing',
+                'path' => $path,
+            ];
+        }
+
+        if (!GeneratedBlock::has(
+            $this->files->read($path),
+            'generated-rules'
+        )) {
+            return [
+                'action' => 'skipped-no-marker',
+                'path' => $path,
+            ];
+        }
+
+        $content =
+            $this->buildRules(
+                $schema
+            );
+
+        $this->files->updateGeneratedBlock(
+            $path,
+            'generated-rules',
+            $content
+        );
+
+        return [
+            'action' => 'updated',
+            'path' => $path,
+        ];
+    }
+
     protected function generateNode(
         $module,
         MenuDefinition $definition,
         array $options,
         array &$results
     ): void {
-        if ($definition->resourceClass) {
+        if (
+            $definition->isResource() &&
+            $definition->controllerClass
+        ) {
             $relative =
-                $definition->resourceRelativePath();
+                $this->requestRelativePath(
+                    $definition
+                );
 
             $path =
-                $this->files->getResourcePath(
+                $this->files->getRequestPath(
                     $module,
                     $relative
                 );
@@ -2298,10 +4144,7 @@ implements GeneratorInterface
             $exists =
                 $this->files->exists($path);
 
-            if (
-                !$exists ||
-                ($options['force'] ?? false)
-            ) {
+            if (!$exists) {
                 $this->files->writeFile(
                     $path,
                     $this->content(
@@ -2314,17 +4157,16 @@ implements GeneratorInterface
 
             $results[] = [
                 'name' =>
-                $definition->resourceClass,
+                $definition->requestClass(),
+
                 'path' => $relative,
+
                 'full_path' => $path,
+
                 'action' =>
-                !$exists
-                    ? 'created'
-                    : (
-                        ($options['force'] ?? false)
-                        ? 'updated'
-                        : 'skipped'
-                    ),
+                $exists
+                    ? 'skipped'
+                    : 'created',
             ];
         }
 
@@ -2343,25 +4185,27 @@ implements GeneratorInterface
         MenuDefinition $definition,
         array &$results
     ): void {
-        if ($definition->resourceClass) {
-            $relative =
-                $definition->resourceRelativePath();
-
+        if (
+            $definition->isResource() &&
+            $definition->controllerClass
+        ) {
             $path =
-                $this->files->getResourcePath(
+                $this->files->getRequestPath(
                     $module,
-                    $relative
+                    $this->requestRelativePath(
+                        $definition
+                    )
                 );
 
             $results[] = [
                 'action' =>
                 $this->files->exists($path)
-                    ? 'update'
+                    ? 'keep'
                     : 'create',
+
                 'file' => $path,
-                'type' => 'resource',
-                'name' =>
-                $definition->resourceClass,
+
+                'type' => 'request',
             ];
         }
 
@@ -2374,6 +4218,304 @@ implements GeneratorInterface
         }
     }
 
+    protected function requestRelativePath(
+        MenuDefinition $definition
+    ): string {
+        $namespace =
+            $definition->controllerNamespace();
+
+        return (
+            $namespace
+            ? str_replace(
+                '\\',
+                '/',
+                $namespace
+            ) . '/'
+            : ''
+        )
+            . $definition->requestClass();
+    }
+
+
+    protected function content(
+        $module,
+        MenuDefinition $definition
+    ): string {
+        return $this->stubs->renderFile(
+            'request.stub',
+            [
+                'NAMESPACE' => $this->support->requestNamespace(
+                    $module,
+                    $definition
+                ),
+
+                'CLASS' => $definition->requestClass(),
+
+                'IMPORTS' => $this->support->generatorImports(
+                    'request',
+                    [
+                        \Illuminate\Foundation\Http\FormRequest::class,
+                    ]
+                ),
+
+                'TRAIT_IMPORTS' => $this->support->traitImports(
+                    'request'
+                ),
+
+                'TRAITS' => $this->support->traitUsage(
+                    'request'
+                ),
+            ]
+        );
+    }
+
+    protected function buildRules(
+        SchemaDefinition $schema
+    ): string {
+
+        if (!$this->support->featureEnabled('request', 'schema_rules')) {
+            return '        return [];';
+        }
+        $rules = $schema->validationRules();
+
+        if (!$rules) {
+            return '        return [];';
+        }
+
+        $lines = [
+            '        return [',
+        ];
+
+        foreach ($rules as $field => $fieldRules) {
+            $encoded = implode(
+                '|',
+                $fieldRules
+            );
+
+            $lines[] =
+                "            "
+                . var_export(
+                    $field,
+                    true
+                )
+                . " => "
+                . var_export(
+                    $encoded,
+                    true
+                )
+                . ",";
+        }
+
+        $lines[] = '        ];';
+
+        return implode(
+            PHP_EOL,
+            $lines
+        );
+    }
+}
+
+```
+
+### src/Generators/Resource/ResourceGenerator.php
+
+```php
+<?php
+
+namespace Bitsnio\AsasFlow\Generators\Resource;
+
+use Bitsnio\AsasFlow\Foundation\Contracts\GeneratorInterface;
+use Bitsnio\AsasFlow\Foundation\Support\FileHandler;
+use Bitsnio\AsasFlow\Foundation\Support\GeneratedBlock;
+use Bitsnio\AsasFlow\Foundation\Support\MenuDefinition;
+use Bitsnio\AsasFlow\Generators\Schema\SchemaDefinition;
+use Bitsnio\AsasFlow\Foundation\Support\GeneratorSupport;
+use Bitsnio\AsasFlow\Foundation\Support\StubRenderer;
+
+class ResourceGenerator implements GeneratorInterface
+{
+    public function __construct(
+        protected FileHandler $files,
+        protected GeneratorSupport $support,
+        protected StubRenderer $stubs,
+
+    ) {}
+
+    public function generate(
+        $module,
+        array $definitions,
+        array $options = []
+    ): array {
+        $results = [];
+
+        foreach ($definitions as $definition) {
+            $this->generateNode(
+                $module,
+                $definition,
+                $options,
+                $results
+            );
+        }
+
+        return $results;
+    }
+
+    public function preview(
+        $module,
+        array $definitions,
+        array $options = []
+    ): array {
+        $results = [];
+
+        foreach ($definitions as $definition) {
+            $this->previewNode(
+                $module,
+                $definition,
+                $results
+            );
+        }
+
+        return $results;
+    }
+
+    public function syncFromSchema(
+        $module,
+        MenuDefinition $definition,
+        SchemaDefinition $schema
+    ): array {
+        if (!$definition->hasResource()) {
+            return [
+                'action' => 'skipped',
+            ];
+        }
+
+        $path =
+            $this->files->getResourcePath(
+                $module,
+                $definition->resourceRelativePath()
+            );
+
+        if (!$this->files->exists($path)) {
+            return [
+                'action' => 'missing',
+                'path' => $path,
+            ];
+        }
+
+        $document =
+            $this->files->read($path);
+
+        if (!GeneratedBlock::has(
+            $document,
+            'generated-fields'
+        )) {
+            return [
+                'action' => 'skipped-no-marker',
+                'path' => $path,
+            ];
+        }
+
+        $this->files->updateGeneratedBlock(
+            $path,
+            'generated-fields',
+            $this->buildFields($schema)
+        );
+
+        return [
+            'action' => 'updated',
+            'path' => $path,
+        ];
+    }
+
+    protected function generateNode(
+        $module,
+        MenuDefinition $definition,
+        array $options,
+        array &$results
+    ): void {
+        if ($definition->hasResource()) {
+            $relative =
+                $definition->resourceRelativePath();
+
+            $path =
+                $this->files->getResourcePath(
+                    $module,
+                    $relative
+                );
+
+            $exists =
+                $this->files->exists($path);
+
+            if (!$exists) {
+                $this->files->writeFile(
+                    $path,
+                    $this->content(
+                        $module,
+                        $definition
+                    ),
+                    true
+                );
+            }
+
+            $results[] = [
+                'name' =>
+                $definition->resourceClass,
+
+                'path' => $relative,
+
+                'full_path' => $path,
+
+                'action' =>
+                $exists
+                    ? 'skipped'
+                    : 'created',
+            ];
+        }
+
+        foreach ($definition->children as $child) {
+            $this->generateNode(
+                $module,
+                $child,
+                $options,
+                $results
+            );
+        }
+    }
+
+    protected function previewNode(
+        $module,
+        MenuDefinition $definition,
+        array &$results
+    ): void {
+        if ($definition->hasResource()) {
+            $path =
+                $this->files->getResourcePath(
+                    $module,
+                    $definition->resourceRelativePath()
+                );
+
+            $results[] = [
+                'action' =>
+                $this->files->exists($path)
+                    ? 'keep'
+                    : 'create',
+
+                'file' => $path,
+
+                'type' => 'resource',
+            ];
+        }
+
+        foreach ($definition->children as $child) {
+            $this->previewNode(
+                $module,
+                $child,
+                $results
+            );
+        }
+    }
+
+
     protected function content(
         $module,
         MenuDefinition $definition
@@ -2381,77 +4523,66 @@ implements GeneratorInterface
         return $this->stubs->renderFile(
             'resource.stub',
             [
-                'NAMESPACE' =>
-                $this->namespace(
+                'NAMESPACE' => $this->support->resourceNamespace(
                     $module,
                     $definition
                 ),
 
-                'CLASS' =>
-                $definition->resourceClass,
+                'CLASS' => $definition->resourceClass,
 
-                'FIELDS' =>
-                $this->fields(
-                    $definition->config['resource']['fields'] ?? null
+                'IMPORTS' => $this->support->generatorImports(
+                    'resource',
+                    [
+                        \Illuminate\Http\Request::class,
+                        \Illuminate\Http\Resources\Json\JsonResource::class,
+                    ]
+                ),
+
+                'TRAIT_IMPORTS' => $this->support->traitImports(
+                    'resource'
+                ),
+
+                'TRAITS' => $this->support->traitUsage(
+                    'resource'
                 ),
             ]
         );
     }
 
-    protected function namespace(
-        $module,
-        MenuDefinition $definition
+    protected function buildFields(
+        SchemaDefinition $schema
     ): string {
-        $namespace =
-            "Modules\\{$module->getName()}"
-            . "\\App\\Http\\Resources";
 
-        $relative =
-            $definition->resourceNamespace();
+        if (!$this->support->featureEnabled('resource', 'schema_fields')) {
+            return '        return [];';
+        }
+        $properties = $schema->properties();
 
-        return $relative
-            ? $namespace . '\\' . $relative
-            : $namespace;
-    }
-
-    protected function fields(
-        ?array $fields
-    ): string {
-        if (!$fields) {
-            return
-                '        return parent::toArray($request);';
+        if (!$properties) {
+            return '        return [];';
         }
 
         $lines = [
             '        return [',
         ];
 
-        foreach ($fields as $field) {
-            if (is_string($field)) {
-                $lines[] =
-                    "            '{$field}' => "
-                    . "\$this->{$field},";
-                continue;
-            }
-
-            if (
-                is_array($field) &&
-                isset($field['name'])
-            ) {
-                $name = $field['name'];
-                $source =
-                    $field['source'] ?? $name;
-
-                $lines[] =
-                    "            '{$name}' => "
-                    . "\$this->{$source},";
-            }
+        foreach (
+            array_keys($properties)
+            as $field
+        ) {
+            $lines[] =
+                "            "
+                . var_export(
+                    $field,
+                    true
+                )
+                . " => \$this->{$field},";
         }
 
         $lines[] = '        ];';
 
         return implode(
-            "\n",
+            PHP_EOL,
             $lines
         );
     }
@@ -2468,15 +4599,15 @@ namespace Bitsnio\AsasFlow\Generators\Route;
 
 use Bitsnio\AsasFlow\Foundation\Contracts\GeneratorInterface;
 use Bitsnio\AsasFlow\Foundation\Support\FileHandler;
-use Bitsnio\AsasFlow\Generators\Menu\MenuDefinition;
+use Bitsnio\AsasFlow\Foundation\Support\MenuDefinition;
+use Bitsnio\AsasFlow\Foundation\Support\GeneratorSupport;
 use Illuminate\Support\Str;
 
-class RouteGenerator
-    implements GeneratorInterface
+class RouteGenerator implements GeneratorInterface
 {
     public function __construct(
         protected FileHandler $files,
-        protected RouteNameGenerator $routeNameGenerator,
+        protected GeneratorSupport $support,
     ) {}
 
     public function generate(
@@ -2484,11 +4615,10 @@ class RouteGenerator
         array $definitions,
         array $options = []
     ): array {
-        $path =
-            $this->files->getRoutesPath($module);
-
-        $exists =
-            $this->files->exists($path);
+        $routeFile =
+            $this->files->getRoutesPath(
+                $module
+            );
 
         $content =
             $this->buildRouteFile(
@@ -2497,16 +4627,17 @@ class RouteGenerator
             );
 
         $this->files->writeFile(
-            $path,
+            $routeFile,
             $content,
             true
         );
 
-        return [[
-            'path' => $path,
-            'action' =>
-                $exists ? 'updated' : 'created',
-        ]];
+        return [
+            [
+                'path' => $routeFile,
+                'action' => 'created/updated',
+            ],
+        ];
     }
 
     public function preview(
@@ -2514,45 +4645,50 @@ class RouteGenerator
         array $definitions,
         array $options = []
     ): array {
-        $path =
-            $this->files->getRoutesPath($module);
+        $routeFile =
+            $this->files->getRoutesPath(
+                $module
+            );
 
-        return [[
-            'action' =>
-                $this->files->exists($path)
+        return [
+            [
+                'action' =>
+                $this->files->exists($routeFile)
                     ? 'update'
                     : 'create',
-            'file' => $path,
-            'type' => 'routes',
-        ]];
+
+                'file' => $routeFile,
+                'type' => 'routes',
+            ],
+        ];
     }
+
 
     protected function buildRouteFile(
         $module,
         array $definitions
     ): string {
-        $controllers =
-            $this->collectControllers(
-                $definitions
-            );
+        $controllers = $this->collectControllers($definitions);
 
-        $content =
-            "<?php\n\n"
-            . "use Illuminate\\Support\\Facades\\Route;\n";
+        $imports = [
+            \Illuminate\Support\Facades\Route::class,
+        ];
 
         foreach ($controllers as $definition) {
-            $namespace =
-                $this->controllerNamespace(
-                    $module,
-                    $definition
-                );
-
-            $content .=
-                "use {$namespace}\\"
-                . "{$definition->controllerClass};\n";
+            $imports[] = $this->support->controllerNamespace(
+                $module,
+                $definition
+            ) . '\\' . $definition->controllerClass;
         }
 
-        $content .= "\n";
+        $content = "<?php\n\n";
+
+        $content .= $this->support->generatorImports(
+            'route',
+            $imports
+        );
+
+        $content .= "\n\n";
 
         foreach ($definitions as $definition) {
             $content .= $this->buildNode(
@@ -2562,7 +4698,7 @@ class RouteGenerator
             );
         }
 
-        return rtrim($content) . "\n";
+        return $content;
     }
 
     protected function buildNode(
@@ -2572,9 +4708,6 @@ class RouteGenerator
     ): string {
         $indent =
             str_repeat('    ', $level);
-
-        $segment =
-            Str::kebab($definition->name);
 
         $additionalMiddleware =
             array_values(
@@ -2586,19 +4719,44 @@ class RouteGenerator
 
         $content = '';
 
+        /*
+         * Resource
+         */
         if (
             $definition->isResource() &&
             $definition->controllerClass
         ) {
-            $content .= $this->resourceRoute(
-                $definition,
-                $segment,
-                $level,
-                $additionalMiddleware
-            );
+            $content .=
+                $this->buildResourceRoute(
+                    $definition,
+                    $additionalMiddleware,
+                    $level
+                );
         }
 
-        if (!empty($definition->children)) {
+        /*
+         * Action
+         */
+        if ($definition->isAction()) {
+            $content .=
+                $this->buildActionRoute(
+                    $definition,
+                    $additionalMiddleware,
+                    $level
+                );
+        }
+
+        /*
+         * Children / group
+         */
+        if (
+            !empty($definition->children)
+        ) {
+            $segment =
+                Str::kebab(
+                    $definition->name
+                );
+
             $content .=
                 $indent
                 . "Route::prefix('{$segment}')";
@@ -2611,7 +4769,7 @@ class RouteGenerator
                     . $this->phpArray(
                         $additionalMiddleware
                     )
-                    . ')';
+                    . ")";
             }
 
             $content .=
@@ -2623,11 +4781,12 @@ class RouteGenerator
                 $definition->children
                 as $child
             ) {
-                $content .= $this->buildNode(
-                    $child,
-                    $definition->middleware,
-                    $level + 1
-                );
+                $content .=
+                    $this->buildNode(
+                        $child,
+                        $definition->middleware,
+                        $level + 1
+                    );
             }
 
             $content .=
@@ -2638,11 +4797,10 @@ class RouteGenerator
         return $content;
     }
 
-    protected function resourceRoute(
+    protected function buildResourceRoute(
         MenuDefinition $definition,
-        string $segment,
-        int $level,
-        array $additionalMiddleware
+        array $middleware,
+        int $level
     ): string {
         $indent =
             str_repeat('    ', $level);
@@ -2652,8 +4810,13 @@ class RouteGenerator
 
         $resource =
             "Route::apiResource("
-            . "'{$segment}', "
-            . "{$definition->controllerClass}::class)";
+            . "'"
+            . Str::kebab(
+                $definition->name
+            )
+            . "', "
+            . $definition->controllerClass
+            . "::class)";
 
         $allActions = [
             'index',
@@ -2665,20 +4828,14 @@ class RouteGenerator
 
         if ($actions !== $allActions) {
             $resource .=
-                '->only('
+                "->only("
                 . $this->phpArray($actions)
-                . ')';
+                . ")";
         }
 
-        $resource .=
-            '->names('
-            . $this->routeNames(
-                $definition,
-                $actions
-            )
-            . ');';
+        $resource .= ";";
 
-        if (!$additionalMiddleware) {
+        if (!$middleware) {
             return
                 $indent
                 . $resource
@@ -2687,35 +4844,80 @@ class RouteGenerator
 
         return
             $indent
-            . 'Route::middleware('
-            . $this->phpArray(
-                $additionalMiddleware
-            )
+            . "Route::middleware("
+            . $this->phpArray($middleware)
             . ")->group(function () {\n"
             . $indent
-            . '    '
+            . "    "
             . $resource
             . "\n"
             . $indent
             . "});\n\n";
     }
 
-    protected function routeNames(
+    protected function buildActionRoute(
         MenuDefinition $definition,
-        array $actions
+        array $middleware,
+        int $level
     ): string {
-        $names = [];
+        $indent =
+            str_repeat('    ', $level);
 
-        foreach ($actions as $action) {
-            $names[$action] =
-                $this->routeNameGenerator
-                    ->generateRouteName(
-                        $definition->path,
-                        $action
-                    );
+        $method =
+            strtolower(
+                $definition->actionMethod()
+            );
+
+        $path =
+            $definition->actionPath();
+
+        $controller =
+            $definition->controllerClass;
+
+        if (!$controller) {
+            throw new \InvalidArgumentException(
+                "Action ["
+                    . $definition->permissionKey()
+                    . "] requires a controller."
+            );
         }
 
-        return $this->phpArray($names);
+        $route =
+            "Route::{$method}("
+            . "'{$path}', "
+            . $controller
+            . "::class)";
+
+        if ($definition->config['controller_method'] ?? null) {
+            $route =
+                "Route::{$method}("
+                . "'{$path}', ["
+                . $controller
+                . "::class, '"
+                . $definition->config['controller_method']
+                . "'])";
+        }
+
+        $route .= ";";
+
+        if (!$middleware) {
+            return
+                $indent
+                . $route
+                . "\n\n";
+        }
+
+        return
+            $indent
+            . "Route::middleware("
+            . $this->phpArray($middleware)
+            . ")->group(function () {\n"
+            . $indent
+            . "    "
+            . $route
+            . "\n"
+            . $indent
+            . "});\n\n";
     }
 
     protected function collectControllers(
@@ -2739,44 +4941,24 @@ class RouteGenerator
         return $result;
     }
 
-    protected function controllerNamespace(
-        $module,
-        MenuDefinition $definition
-    ): string {
-        $namespace =
-            "Modules\\{$module->getName()}"
-            . "\\App\\Http\\Controllers";
-
-        $relative =
-            $definition->controllerNamespace();
-
-        return $relative
-            ? $namespace . '\\' . $relative
-            : $namespace;
-    }
-
-    protected function phpArray(
-        array $values
-    ): string {
-        $parts = [];
-
-        foreach ($values as $key => $value) {
-            if (is_int($key)) {
-                $parts[] =
-                    var_export($value, true);
-            } else {
-                $parts[] =
-                    var_export($key, true)
-                    . ' => '
-                    . var_export($value, true);
-            }
+    /**
+     * Convert an array of values into a PHP array expression.
+     */
+    protected function phpArray(array $values): string
+    {
+        if (empty($values)) {
+            return '[]';
         }
 
-        return '['
-            . implode(', ', $parts)
-            . ']';
+        $items = array_map(
+            fn($value) => var_export($value, true),
+            $values
+        );
+
+        return '[' . implode(', ', $items) . ']';
     }
 }
+
 ```
 
 ### src/Generators/Route/RouteNameGenerator.php
@@ -2791,6 +4973,7 @@ use Illuminate\Support\Str;
 class RouteNameGenerator
 {
     protected const MAX_ROUTE_NAME_LENGTH = 60;
+
     protected const HASH_LENGTH = 8;
 
     public function generateRouteName(
@@ -2810,6 +4993,11 @@ class RouteNameGenerator
                     : ''
             );
 
+        /*
+         * URL hierarchy is NEVER shortened.
+         *
+         * Only route names are shortened when necessary.
+         */
         if (
             strlen($full) <=
             self::MAX_ROUTE_NAME_LENGTH
@@ -2821,16 +5009,26 @@ class RouteNameGenerator
             '_',
             array_map(
                 fn ($part) =>
-                    Str::substr($part, 0, 1),
+                    Str::substr(
+                        $part,
+                        0,
+                        1
+                    ),
                 $parts
             )
         );
 
-        $hash = substr(
-            md5(implode('|', $parts)),
-            0,
-            self::HASH_LENGTH
-        );
+        $hash =
+            substr(
+                md5(
+                    implode(
+                        '|',
+                        $parts
+                    )
+                ),
+                0,
+                self::HASH_LENGTH
+            );
 
         return $prefix
             . '_'
@@ -2848,24 +5046,33 @@ class RouteNameGenerator
         ?string $action = null
     ): array {
         return [
-            'generated' => $generatedName,
-            'original_parts' => $pathParts,
-            'action' => $action,
-            'hash' => substr(
-                md5(
-                    implode(
-                        '|',
-                        array_map(
-                            [Str::class, 'kebab'],
-                            $pathParts
+            'generated' =>
+                $generatedName,
+
+            'original_parts' =>
+                $pathParts,
+
+            'action' =>
+                $action,
+
+            'hash' =>
+                substr(
+                    md5(
+                        implode(
+                            '|',
+                            array_map(
+                                [Str::class, 'kebab'],
+                                $pathParts
+                            )
                         )
-                    )
+                    ),
+                    0,
+                    self::HASH_LENGTH
                 ),
-                0,
-                self::HASH_LENGTH
-            ),
+
             'nesting_level' =>
                 count($pathParts),
+
             'was_shortened' =>
                 $generatedName !==
                 $this->generateRouteName(
@@ -2875,6 +5082,394 @@ class RouteNameGenerator
         ];
     }
 }
+```
+
+### src/Generators/Schema/SchemaArtifactGenerator.php
+
+```php
+<?php
+
+namespace Bitsnio\AsasFlow\Generators\Schema;
+
+use Bitsnio\AsasFlow\Generators\Controller\ControllerGenerator;
+use Bitsnio\AsasFlow\Foundation\Support\MenuDefinition;
+use Bitsnio\AsasFlow\Generators\Migration\MigrationGenerator;
+use Bitsnio\AsasFlow\Generators\Model\ModelGenerator;
+use Bitsnio\AsasFlow\Generators\Request\RequestGenerator;
+use Bitsnio\AsasFlow\Generators\Resource\ResourceGenerator;
+
+class SchemaArtifactGenerator
+{
+    public function __construct(
+        protected ModelGenerator $modelGenerator,
+        protected MigrationGenerator $migrationGenerator,
+        protected RequestGenerator $requestGenerator,
+        protected ResourceGenerator $resourceGenerator,
+        protected ControllerGenerator $controllerGenerator,
+    ) {}
+
+    public function generate(
+        $module,
+        array $definitions
+    ): array {
+        $results = [];
+
+        foreach ($definitions as $definition) {
+            $this->generateNode(
+                $module,
+                $definition,
+                $results
+            );
+        }
+
+        return $results;
+    }
+
+    protected function generateNode(
+        $module,
+        MenuDefinition $definition,
+        array &$results
+    ): void {
+        if ($definition->model) {
+            $schemaName =
+                $definition->schemaName
+                ?? $definition->modelClass();
+
+            $schemaPath =
+                $module->getPath()
+                . '/schema/'
+                . $schemaName
+                . '.json';
+
+            if (!is_file($schemaPath)) {
+                $results[] = [
+                    'type' => 'schema',
+                    'action' => 'missing',
+                    'name' => $schemaName,
+                    'path' => $schemaPath,
+                ];
+            } else {
+                $schema =
+                    SchemaDefinition::fromFile(
+                        $schemaPath
+                    );
+
+                $results['models'][] =
+                    $this->modelGenerator->generate(
+                        $module,
+                        $definition,
+                        $schema
+                    );
+
+                $results['migrations'][] =
+                    $this->migrationGenerator->generate(
+                        $module,
+                        $definition,
+                        $schema
+                    );
+
+                $results['requests'][] =
+                    $this->requestGenerator->syncFromSchema(
+                        $module,
+                        $definition,
+                        $schema
+                    );
+
+                $results['resources'][] =
+                    $this->resourceGenerator->syncFromSchema(
+                        $module,
+                        $definition,
+                        $schema
+                    );
+
+                $results['controllers'][] =
+                    $this->controllerGenerator->syncFromSchema(
+                        $module,
+                        $definition,
+                        $schema
+                    );
+            }
+        }
+
+        foreach ($definition->children as $child) {
+            $this->generateNode(
+                $module,
+                $child,
+                $results
+            );
+        }
+    }
+}
+```
+
+### src/Generators/Schema/SchemaDefinition.php
+
+```php
+<?php
+
+namespace Bitsnio\AsasFlow\Generators\Schema;
+
+use InvalidArgumentException;
+
+class SchemaDefinition
+{
+    public function __construct(
+        protected array $schema
+    ) {}
+
+    public static function fromFile(
+        string $path
+    ): self {
+        if (!is_file($path)) {
+            throw new InvalidArgumentException(
+                "Schema file not found: {$path}"
+            );
+        }
+
+        $data = json_decode(
+            file_get_contents($path),
+            true
+        );
+
+        if (!is_array($data)) {
+            throw new InvalidArgumentException(
+                "Invalid JSON schema: {$path}"
+            );
+        }
+
+        return new self($data);
+    }
+
+    public function title(): string
+    {
+        return $this->schema['title']
+            ?? '';
+    }
+
+    public function properties(): array
+    {
+        return is_array(
+            $this->schema['properties'] ?? null
+        )
+            ? $this->schema['properties']
+            : [];
+    }
+
+    public function required(): array
+    {
+        return is_array(
+            $this->schema['required'] ?? null
+        )
+            ? $this->schema['required']
+            : [];
+    }
+
+    public function property(
+        string $name
+    ): array {
+        return is_array(
+            $this->properties()[$name] ?? null
+        )
+            ? $this->properties()[$name]
+            : [];
+    }
+
+    public function validationRules(): array
+    {
+        $rules = [];
+
+        foreach ($this->properties() as $name => $property) {
+            $rules[$name] =
+                $this->rulesFor(
+                    $name,
+                    $property
+                );
+        }
+
+        return $rules;
+    }
+
+    public function casts(): array
+    {
+        $casts = [];
+
+        foreach ($this->properties() as $name => $property) {
+            $type = $property['type'] ?? 'string';
+
+            $cast = match ($type) {
+                'integer' => 'integer',
+                'number' => 'decimal:4',
+                'boolean' => 'boolean',
+                'array',
+                'object' => 'array',
+                default => null,
+            };
+
+            if ($cast !== null) {
+                $casts[$name] = $cast;
+            }
+        }
+
+        return $casts;
+    }
+
+    public function migrationColumns(): array
+    {
+        $columns = [];
+
+        foreach ($this->properties() as $name => $property) {
+            $columns[$name] =
+                $this->migrationColumn(
+                    $name,
+                    $property
+                );
+        }
+
+        return $columns;
+    }
+
+    protected function rulesFor(
+        string $name,
+        array $property
+    ): array {
+        $rules = [];
+
+        if (
+            in_array(
+                $name,
+                $this->required(),
+                true
+            )
+        ) {
+            $rules[] = 'required';
+        } else {
+            $rules[] = 'nullable';
+        }
+
+        $type = $property['type'] ?? 'string';
+
+        switch ($type) {
+            case 'integer':
+                $rules[] = 'integer';
+                break;
+
+            case 'number':
+                $rules[] = 'numeric';
+                break;
+
+            case 'boolean':
+                $rules[] = 'boolean';
+                break;
+
+            case 'array':
+                $rules[] = 'array';
+                break;
+
+            case 'object':
+                $rules[] = 'array';
+                break;
+
+            case 'string':
+            default:
+                $rules[] = 'string';
+
+                if (
+                    isset($property['minLength'])
+                ) {
+                    $rules[] =
+                        'min:'
+                        . $property['minLength'];
+                }
+
+                if (
+                    isset($property['maxLength'])
+                ) {
+                    $rules[] =
+                        'max:'
+                        . $property['maxLength'];
+                }
+
+                $format =
+                    $property['format'] ?? null;
+
+                if ($format === 'email') {
+                    $rules[] = 'email';
+                }
+
+                if ($format === 'date') {
+                    $rules[] = 'date';
+                }
+
+                if ($format === 'date-time') {
+                    $rules[] = 'date';
+                }
+
+                if ($format === 'uri') {
+                    $rules[] = 'url';
+                }
+
+                break;
+        }
+
+        if (
+            isset($property['minimum'])
+        ) {
+            $rules[] =
+                'min:'
+                . $property['minimum'];
+        }
+
+        if (
+            isset($property['maximum'])
+        ) {
+            $rules[] =
+                'max:'
+                . $property['maximum'];
+        }
+
+        if (
+            isset($property['enum']) &&
+            is_array($property['enum'])
+        ) {
+            $rules[] =
+                'in:'
+                . implode(
+                    ',',
+                    array_map(
+                        'strval',
+                        $property['enum']
+                    )
+                );
+        }
+
+        return $rules;
+    }
+
+    protected function migrationColumn(
+        string $name,
+        array $property
+    ): array {
+        $type = $property['type'] ?? 'string';
+
+        return [
+            'name' => $name,
+            'type' => $type,
+            'nullable' =>
+            !in_array(
+                $name,
+                $this->required(),
+                true
+            ),
+            'default' =>
+            $property['default']
+                ?? null,
+            'enum' =>
+            $property['enum']
+                ?? null,
+        ];
+    }
+}
+
 ```
 
 ### src/Generators/Schema/SchemaGenerator.php
@@ -2887,11 +5482,10 @@ namespace Bitsnio\AsasFlow\Generators\Schema;
 use Bitsnio\AsasFlow\Foundation\Contracts\GeneratorInterface;
 use Bitsnio\AsasFlow\Foundation\Support\FileHandler;
 use Bitsnio\AsasFlow\Foundation\Support\StubRenderer;
-use Bitsnio\AsasFlow\Generators\Menu\MenuDefinition;
+use Bitsnio\AsasFlow\Foundation\Support\MenuDefinition;
 use Illuminate\Support\Str;
 
-class SchemaGenerator
-    implements GeneratorInterface
+class SchemaGenerator implements GeneratorInterface
 {
     public function __construct(
         protected FileHandler $files,
@@ -2944,7 +5538,9 @@ class SchemaGenerator
         if ($definition->model) {
             $name =
                 $definition->schemaName
-                ?? Str::studly($definition->name);
+                ?? Str::studly(
+                    $definition->name
+                );
 
             $path =
                 $this->files->getSchemaPath(
@@ -2955,34 +5551,42 @@ class SchemaGenerator
             $exists =
                 $this->files->exists($path);
 
-            if (
-                !$exists ||
-                ($options['force'] ?? false)
-            ) {
+            /*
+             * Schema becomes user-owned after creation.
+             *
+             * Never overwrite it, even with --force.
+             */
+            if (!$exists) {
                 $this->files->writeFile(
                     $path,
-                    $this->content($definition),
+                    $this->content(
+                        $definition
+                    ),
                     true
                 );
             }
 
             $results[] = [
                 'name' => $name,
+
                 'path' =>
-                    'schema/' . $name . '.json',
+                    'schema/'
+                    . $name
+                    . '.json',
+
                 'full_path' => $path,
+
                 'action' =>
-                    !$exists
-                        ? 'created'
-                        : (
-                            ($options['force'] ?? false)
-                                ? 'updated'
-                                : 'skipped'
-                        ),
+                    $exists
+                        ? 'keep-user-schema'
+                        : 'created',
             ];
         }
 
-        foreach ($definition->children as $child) {
+        foreach (
+            $definition->children
+            as $child
+        ) {
             $this->generateNode(
                 $module,
                 $child,
@@ -3000,7 +5604,9 @@ class SchemaGenerator
         if ($definition->model) {
             $name =
                 $definition->schemaName
-                ?? Str::studly($definition->name);
+                ?? Str::studly(
+                    $definition->name
+                );
 
             $path =
                 $this->files->getSchemaPath(
@@ -3011,15 +5617,21 @@ class SchemaGenerator
             $results[] = [
                 'action' =>
                     $this->files->exists($path)
-                        ? 'update'
+                        ? 'keep-user-schema'
                         : 'create',
+
                 'file' => $path,
+
                 'type' => 'schema',
+
                 'name' => $name,
             ];
         }
 
-        foreach ($definition->children as $child) {
+        foreach (
+            $definition->children
+            as $child
+        ) {
             $this->previewNode(
                 $module,
                 $child,
@@ -3031,8 +5643,19 @@ class SchemaGenerator
     protected function content(
         MenuDefinition $definition
     ): string {
+        /*
+         * Schema configuration here is only for
+         * initial metadata/template values.
+         *
+         * Field definitions are NOT required in menu.php.
+         */
         $schema =
-            $definition->config['schema'] ?? [];
+            is_array(
+                $definition->config['schema']
+                ?? null
+            )
+                ? $definition->config['schema']
+                : [];
 
         return $this->stubs->renderFile(
             'schema.stub',
@@ -3051,19 +5674,20 @@ class SchemaGenerator
                     $schema['description']
                     ?? '',
 
+                /*
+                 * Important:
+                 *
+                 * Do NOT populate properties from
+                 * menu.php.
+                 *
+                 * Schema starts empty and developer
+                 * owns it after generation.
+                 */
                 'PROPERTIES' =>
-                    $this->json(
-                        $schema['properties']
-                        ?? []
-                    ),
+                    $this->json([]),
 
                 'REQUIRED' =>
-                    $this->json(
-                        array_values(
-                            $schema['required']
-                            ?? []
-                        )
-                    ),
+                    $this->json([]),
 
                 'ADDITIONAL_PROPERTIES' =>
                     json_encode(
@@ -3097,15 +5721,198 @@ class SchemaGenerator
 
 namespace {{ NAMESPACE }};
 
-use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
-{{ MODEL_IMPORT }}
-{{ REQUEST_IMPORT }}
-{{ RESOURCE_IMPORT }}
+{{ IMPORTS }}
+{{ TRAIT_IMPORTS }}
 
 class {{ CLASS }} extends Controller
 {
+{{ TRAITS }}
 {{ METHODS }}
+}
+```
+
+### src/Generators/Stubs/Menu.stub
+
+```
+<?php
+
+return [
+    /*
+    |--------------------------------------------------------------------------
+    | Module
+    |--------------------------------------------------------------------------
+    */
+
+    'module' => [
+        'name' => '{{ MODULE_NAME }}',
+        'title' => '{{ TITLE }}',
+
+        'middleware' => [
+            'api',
+            'auth:api',
+            'asasflow.permission',
+        ],
+
+        'children' => [
+
+            /*
+            |--------------------------------------------------------------------------
+            | GROUP
+            |--------------------------------------------------------------------------
+            |
+            | "type" is not required here.
+            |
+            | Any menu item without a type automatically becomes a group.
+            |
+            */
+
+            [
+                'name' => 'organization',
+                'title' => 'Organization',
+
+                'children' => [
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | RESOURCE
+                    |--------------------------------------------------------------------------
+                    |
+                    | Generates apiResource CRUD routes.
+                    |
+                    */
+
+                    [
+                        'name' => 'companies',
+                        'title' => 'Companies',
+                        'type' => 'resource',
+
+                        'model' => true,
+
+                        /*
+                        | Optional. Full CRUD is the default.
+                        */
+
+                        // 'routes' => [
+                        //     'index',
+                        //     'show',
+                        //     'store',
+                        //     'update',
+                        //     'destroy',
+                        // ],
+
+                        /*
+                        | Optional permission descriptions.
+                        */
+
+                        'permissions' => [
+                            'view' => 'View companies',
+                            'create' => 'Create companies',
+                            'update' => 'Update companies',
+                            'delete' => 'Delete companies',
+                        ],
+
+                        'children' => [
+
+                            /*
+                            |--------------------------------------------------------------------------
+                            | ACTION
+                            |--------------------------------------------------------------------------
+                            |
+                            | Custom endpoint.
+                            |
+                            | No controller_method is required.
+                            | The generated controller can be implemented later.
+                            |
+                            */
+
+                            [
+                                'name' => 'approve',
+                                'title' => 'Approve Company',
+                                'type' => 'action',
+
+                                'method' => 'POST',
+                                'path' => '{company}/approve',
+
+                                'controller' => [
+                                    'class' => 'CompanyActionController',
+                                ],
+
+                                'permissions' => [
+                                    'execute' => 'Approve companies',
+                                ],
+                            ],
+
+                        ],
+                    ],
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | ANOTHER RESOURCE
+                    |--------------------------------------------------------------------------
+                    */
+
+                    [
+                        'name' => 'sites',
+                        'title' => 'Sites',
+                        'type' => 'resource',
+                        'model' => true,
+                    ],
+                ],
+            ],
+        ],
+    ],
+];
+```
+
+### src/Generators/Stubs/Model.stub
+
+```
+<?php
+
+namespace {{ namespace }};
+
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
+
+class {{ class }} extends Model
+{
+    use SoftDeletes;
+
+    protected $fillable = [
+        // @asasflow:generated-fillable:start
+        // @asasflow:generated-fillable:end
+    ];
+
+    protected $casts = [
+        // @asasflow:generated-casts:start
+        // @asasflow:generated-casts:end
+    ];
+}
+```
+
+### src/Generators/Stubs/Request.stub
+
+```
+<?php
+
+namespace {{ NAMESPACE }};
+
+use Illuminate\Foundation\Http\FormRequest;
+
+class {{ CLASS }} extends FormRequest
+{
+    public function authorize(): bool
+    {
+        return true;
+    }
+
+    public function rules(): array
+    {
+        // @asasflow:rules:start
+        return [];
+        // @asasflow:rules:end
+    }
 }
 ```
 
@@ -3116,14 +5923,17 @@ class {{ CLASS }} extends Controller
 
 namespace {{ NAMESPACE }};
 
-use Illuminate\Http\Request;
-use Illuminate\Http\Resources\Json\JsonResource;
+{{ IMPORTS }}
+{{ TRAIT_IMPORTS }}
 
 class {{ CLASS }} extends JsonResource
 {
+{{ TRAITS }}
     public function toArray(Request $request): array
     {
-{{ FIELDS }}
+        // @asasflow:generated-fields:start
+        return parent::toArray($request);
+        // @asasflow:generated-fields:end
     }
 }
 ```

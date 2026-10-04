@@ -1,152 +1,108 @@
-# Laravel Project Installation Guide
+# Installing AsasFlow
 
-This guide will walk you through the process of cloning and installing an existing Laravel project using Composer.
+This guide covers installing the AsasFlow package into an existing Laravel application. Use the installation method that matches how the package is distributed by your team.
 
 ## Prerequisites
 
-Before you begin, ensure you have the following installed on your system:
+* A Laravel application compatible with the package's `composer.json` requirements.
+* Composer.
+* A supported database configured in `.env`.
+* The Laravel Modules fork/version required by your project.
+* Spatie Laravel Permission if it is not already installed as a package dependency.
 
-- PHP (8.1 or higher recommended)
-- Composer (2.0+ recommended)
-- Git
-- MySQL, PostgreSQL, or SQLite
-- Node.js and NPM (for frontend assets)
-- Server requirements:
-  - BCMath PHP Extension
-  - Ctype PHP Extension
-  - Fileinfo PHP Extension
-  - JSON PHP Extension
-  - Mbstring PHP Extension
-  - OpenSSL PHP Extension
-  - PDO PHP Extension
-  - Tokenizer PHP Extension
-  - XML PHP Extension
+Check the package's `composer.json` for the authoritative PHP and Laravel version constraints.
 
-## Installation Steps
+## Option A: Install from a local path repository
 
-### 1. Clone the Repository
+Use this when developing AsasFlow alongside the host application.
+
+Add a path repository to the host application's `composer.json`. Adjust the relative path to the actual package directory:
+
+```json
+{
+  "repositories": [
+    {
+      "type": "path",
+      "url": "../AsasFlow",
+      "options": {
+        "symlink": true
+      }
+    }
+  ]
+}
+```
+
+Then require the actual Composer package name declared in AsasFlow's `composer.json`:
 
 ```bash
-git clone https://github.com/username/project-name.git
-cd project-name
+composer require vendor/package-name:@dev
 ```
 
-### 2. Install Composer Dependencies
+Replace `vendor/package-name` with the package's real Composer name. Do not use the placeholder literally.
+
+If Composer reports a package version constraint issue, check the package's `version`/branch aliases and the host project's stability settings.
+
+## Option B: Install from a VCS repository
+
+If the package is hosted in Git, add its repository to the host application's `composer.json`:
+
+```json
+{
+  "repositories": [
+    {
+      "type": "vcs",
+      "url": "https://your-git-host/your-team/asasflow.git"
+    }
+  ]
+}
+```
+
+Then require the real Composer package name and a valid branch, tag, or version:
 
 ```bash
-composer install
+composer require vendor/package-name:dev-main
 ```
 
-### 3. Create Environment File
+Replace the URL, package name, and branch with your project's actual values.
 
-Copy the example environment file and generate an application key:
+## Publish package configuration and stubs
+
+If the package registers publishable configuration or stubs, inspect its service provider and run the tag actually registered by the package. For example, first discover available tags:
 
 ```bash
-cp .env.example .env
-php artisan key:generate
+php artisan vendor:publish
 ```
 
-### 4. Configure Environment Variables
+Do not assume a publish tag or config filename; use the options displayed by the installed package.
 
-Open the `.env` file in your text editor and configure your database connection:
-
-```ini
-DB_CONNECTION=mysql
-DB_HOST=127.0.0.1
-DB_PORT=3306
-DB_DATABASE=your_database_name
-DB_USERNAME=your_database_username
-DB_PASSWORD=your_database_password
-```
-
-### 5. Run Database Migrations
+## Verify installation
 
 ```bash
-php artisan migrate
+composer show | grep -i asasflow
+php artisan list
 ```
 
-If the project includes seed data, you can run:
+Confirm that the expected AsasFlow commands appear in Artisan's command list. The command names in this documentation should be checked against the installed version.
+
+## Module support
+
+Create modules using the Laravel Modules command supplied by your installed fork. In a typical installation:
 
 ```bash
-php artisan db:seed
+php artisan module:make Admin
 ```
 
-### 6. Install Frontend Dependencies (if applicable)
+Check `php artisan list` if your fork uses a different command signature.
 
-```bash
-npm install
-npm run dev
-```
+## After installation
 
-For production:
+1. Create or select a module.
+2. Define its menu in `Modules/{ModuleName}/config/menu.php`.
+3. Run the menu/controller generation command supported by your installed package.
+4. Review generated files before committing them.
+5. Define the module's JSON Schemas.
+6. Test generated routes, validation, and database migrations in a development database.
 
-```bash
-npm run build
-```
+## Important
 
-### 7. Create Storage Link (if needed)
-
-```bash
-php artisan storage:link
-```
-
-### 8. Set Directory Permissions
-
-```bash
-chmod -R 775 storage bootstrap/cache
-```
-
-### 9. Clear Configuration Cache
-
-```bash
-php artisan config:clear
-php artisan cache:clear
-```
-
-### 10. Serve the Application
-
-For local development:
-
-```bash
-php artisan serve
-```
-
-This will start a development server at `http://localhost:8000`.
-
-## Troubleshooting
-
-### Common Issues
-
-1. **Composer Memory Limit**
-   
-   If Composer runs out of memory:
-   ```bash
-   COMPOSER_MEMORY_LIMIT=-1 composer install
-   ```
-
-2. **Permission Denied Errors**
-   
-   If you encounter permission issues:
-   ```bash
-   sudo chown -R $USER:www-data storage
-   sudo chown -R $USER:www-data bootstrap/cache
-   ```
-
-3. **Database Connection Issues**
-   
-   Verify your database credentials and ensure the database exists.
-
-4. **Missing Extensions**
-   
-   If PHP extensions are missing, install them using your system's package manager.
-
-## Next Steps
-
-After installation, you should:
-
-1. Review the project documentation
-2. Set up your IDE/editor
-3. Configure your local development environment
-4. Learn about the project structure and architecture
-
-For more information, refer to the [Laravel documentation](https://laravel.com/docs).
+Model and migration generation from schema is currently considered experimental in this documentation until it has been tested in the target project. Do not run unverified generated migrations against production data.

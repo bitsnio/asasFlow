@@ -25,7 +25,7 @@ return new class extends Migration
              *
              * company_id != NULL = company level
              */
-            $table->unsignedBigInteger('company_id')->nullable();
+            $table->unsignedBigInteger('tenant_id')->nullable();
 
             /*
              * NULL = company/module level
@@ -50,12 +50,12 @@ return new class extends Migration
              */
             $table->index([
                 'module',
-                'company_id',
+                'tenant_id',
                 'site_id',
             ],"module_settings_unique_index");
 
             $table->index('module');
-            $table->index('company_id');
+            $table->index('tenant_id');
             $table->index('site_id');
         });
     }

@@ -6,7 +6,7 @@ use Bitsnio\Modules\Commands\Make\ModuleMakeCommand as BaseModuleMakeCommand;
 use Bitsnio\Modules\Contracts\ActivatorInterface;
 use Bitsnio\Modules\Generators\ModuleGenerator;
 use Bitsnio\AsasFlow\Generators\Menu\MenuGenerator;
-use Bitsnio\AsasFlow\Generators\ModuleSettingsGenerator;
+use Bitsnio\AsasFlow\Generators\Module\ModuleSettingsGenerator;
 use Bitsnio\AsasFlow\Console\Commands\Traits\HandlesComposerDump;
 
 class ModuleMakeCommand extends BaseModuleMakeCommand
@@ -70,8 +70,34 @@ class ModuleMakeCommand extends BaseModuleMakeCommand
         try {
             $this->components->info("Running post-generators for [{$moduleName}]...");
 
-            (new MenuGenerator($this->laravel['modules'], $moduleName, $this->components))->generate();
-            (new ModuleSettingsGenerator($this->laravel['modules'], $moduleName, $this->components))->generate();
+            /* * Resolve the actual module from the Modules repository. */
+            $module = $this->laravel['modules']->find(
+                $moduleName
+            );
+            
+            if (!$module) {
+                throw new \RuntimeException(
+                    "Module [{$moduleName}] could not be found."
+                );
+            }
+            /* * Resolve AsasFlow generator dependencies through * Laravel's service container. */
+            $this->laravel->make(
+                MenuGenerator::class
+            )->generate(
+                $module,
+                $moduleName,
+                $this->components
+            );
+
+            $this->laravel->make(
+                ModuleSettingsGenerator::class
+            )->generate(
+                $module,
+                $moduleName,
+                $this->components
+            );
+
+            // (new ModuleSettingsGenerator($this->laravel['modules'], $moduleName, $this->components))->generate();
 
             $this->components->info("✓ Post-generators completed for [{$moduleName}].");
         } catch (\Exception $e) {

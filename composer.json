@@ -5,12 +5,8 @@
   "license": "MIT",
   "autoload": {
     "psr-4": {
-      "Bitsnio\\AsasFlow\\": "src/",
-      "Bitsnio\\Modules\\": "packages/laravel-modules/src/"
-    },
-    "files": [
-      "packages/laravel-modules/src/helpers.php"
-    ]
+      "Bitsnio\\AsasFlow\\": "src/"
+    }
   },
   "authors": [
     {

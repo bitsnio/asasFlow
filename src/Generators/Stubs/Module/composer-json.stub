@@ -1,0 +1,17 @@
+{
+    "name": "modules/{{ MODULE_LOWER }}",
+    "description": "{{ MODULE_TITLE }} module for AsasFlow",
+    "type": "library",
+    "autoload": {
+        "psr-4": {
+            "{{ MODULE_COMPOSER_NAMESPACE }}": "app/",
+            "{{ MODULE_COMPOSER_NAMESPACE }}Database\\Factories\\": "database/factories/",
+            "{{ MODULE_COMPOSER_NAMESPACE }}Database\\Seeders\\": "database/seeders/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "{{ MODULE_COMPOSER_NAMESPACE }}Tests\\": "tests/"
+        }
+    }
+}

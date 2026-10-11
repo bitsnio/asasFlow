@@ -6,7 +6,7 @@ class GeneratorSupport
 {
     public function moduleNamespace($module): string
     {
-        return "Modules\\{$module->getName()}";
+        return trim($module->namespace, '\\');
     }
 
     public function controllerNamespace(
@@ -93,7 +93,7 @@ class GeneratorSupport
     public function configuredImports(string $generator): array
     {
         $imports = config(
-            "asasFlow.generators.{$generator}.imports",
+            "asasflow.generators.{$generator}.imports",
             []
         );
 
@@ -119,7 +119,7 @@ class GeneratorSupport
     public function configuredTraits(string $generator): array
     {
         $traits = config(
-            "asasFlow.generators.{$generator}.traits",
+            "asasflow.generators.{$generator}.traits",
             []
         );
 
@@ -176,7 +176,7 @@ class GeneratorSupport
         string $feature
     ): bool {
         return (bool) config(
-            "asasFlow.generators.{$generator}.features.{$feature}.enabled",
+            "asasflow.generators.{$generator}.features.{$feature}.enabled",
             false
         );
     }
@@ -187,7 +187,7 @@ class GeneratorSupport
         mixed $default = []
     ): mixed {
         return config(
-            "asasFlow.generators.{$generator}.features.{$feature}",
+            "asasflow.generators.{$generator}.features.{$feature}",
             $default
         );
     }

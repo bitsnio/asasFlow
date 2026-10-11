@@ -2,14 +2,14 @@
 
 namespace Bitsnio\AsasFlow\Foundation\Support;
 
-use Bitsnio\Modules\Contracts\RepositoryInterface;
+use Bitsnio\AsasFlow\Foundation\Contracts\ModuleRepositoryInterface;
 use Bitsnio\AsasFlow\Generators\Menu\MenuBuilder;
 use PHPOpenSourceSaver\JWTAuth\Facades\JWTAuth;
 
 class MenuService
 {
     public function __construct(
-        protected RepositoryInterface $repository,
+        protected ModuleRepositoryInterface $repository,
         protected MenuBuilder $builder,
     ) {}
 

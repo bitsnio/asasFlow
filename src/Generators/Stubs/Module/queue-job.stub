@@ -1,0 +1,22 @@
+<?php
+
+declare(strict_types=1);
+
+namespace {{ MODULE_NAMESPACE }}\Jobs;
+
+use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Foundation\Queue\Queueable;
+
+final class {{ MODULE }}QueueJob implements ShouldQueue
+{
+    use Queueable;
+
+    public function __construct(
+        public readonly array $payload = [],
+    ) {}
+
+    public function handle(): void
+    {
+        // Scaffolding test: replace this with the actual job logic.
+    }
+}

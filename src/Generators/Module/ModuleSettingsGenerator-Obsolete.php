@@ -69,7 +69,7 @@ class ModuleSettingsGenerator
         }
 
         $content = $this->stubs->renderFile(
-            'Module/settings-config.stub',
+            'settings-config.stub',
             [
                 'MODULE' => $moduleName,
                 'KEY' => $this->getModuleConfigKey($moduleName),
@@ -97,8 +97,7 @@ class ModuleSettingsGenerator
     protected function getSettingsConfigPath(
         $module
     ): string {
-        return $module->getPath()
-            . '/config/settings.php';
+        return $module->configPath() . '/settings.php';
     }
 
     /**

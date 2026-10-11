@@ -23,8 +23,7 @@ class MenuGenerator
         string $moduleName,
         ?ComponentFactory $component = null
     ): void {
-        $path = $module->getPath()
-            . '/config/menu.php';
+        $path = $module->configPath() . '/menu.php';
 
         try {
             $content = $this->getStubContents(

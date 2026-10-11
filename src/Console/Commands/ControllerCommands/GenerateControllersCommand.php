@@ -9,7 +9,7 @@ use Bitsnio\AsasFlow\Generators\Request\RequestGenerator;
 use Bitsnio\AsasFlow\Generators\Resource\ResourceGenerator;
 use Bitsnio\AsasFlow\Generators\Route\RouteGenerator;
 use Bitsnio\AsasFlow\Generators\Schema\SchemaGenerator;
-use Bitsnio\Modules\Contracts\RepositoryInterface;
+use Bitsnio\AsasFlow\Foundation\Contracts\ModuleRepositoryInterface;
 use Illuminate\Console\Command;
 use Throwable;
 
@@ -38,7 +38,7 @@ class GenerateControllersCommand extends Command
         protected RouteGenerator $routeGenerator,
         protected MenuBuilder $definitionBuilder,
         protected FileHandler $files,
-        protected RepositoryInterface $moduleRepository,
+        protected ModuleRepositoryInterface $moduleRepository,
     ) {
         parent::__construct();
     }

@@ -13,10 +13,10 @@ class ModuleMakeCommand extends BaseModuleMakeCommand
 {
     use HandlesComposerDump;
 
-    protected const FIXED_AUTHOR_VENDOR = 'yourcompany';
+    protected const FIXED_AUTHOR_VENDOR = 'M. Haseeb Khan';
     protected const FIXED_MODULE_TYPE = 'api';
-    protected const DEFAULT_AUTHOR_NAME = 'Your Company Name';
-    protected const DEFAULT_AUTHOR_EMAIL = 'dev@yourcompany.com';
+    protected const DEFAULT_AUTHOR_NAME = 'Bitsnio';
+    protected const DEFAULT_AUTHOR_EMAIL = 'haseeb.khan@bitsnio.com';
 
     public function handle(): int
     {

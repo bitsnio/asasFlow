@@ -77,33 +77,32 @@ class ModelGenerator
         MenuDefinition $definition,
         SchemaDefinition $schema
     ): string {
-        $namespace =
-            "Modules\\{$module->getName()}\\App\\Models";
+        $namespace = "Modules\\{$module->getName()}\\Models";
 
         return <<<PHP
-<?php
+                <?php
 
-namespace {$namespace};
+                namespace {$namespace};
 
-use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\SoftDeletes;
+                use Illuminate\Database\Eloquent\Model;
+                use Illuminate\Database\Eloquent\SoftDeletes;
 
-class {$definition->modelClass()} extends Model
-{
-    use SoftDeletes;
+                class {$definition->modelClass()} extends Model
+                {
+                    use SoftDeletes;
 
-    protected \$fillable = [
-        // @asasflow:generated-fillable:start
-        // @asasflow:generated-fillable:end
-    ];
+                    protected \$fillable = [
+                        // @asasflow:generated-fillable:start
+                        // @asasflow:generated-fillable:end
+                    ];
 
-    protected \$casts = [
-        // @asasflow:generated-casts:start
-        // @asasflow:generated-casts:end
-    ];
-}
+                    protected \$casts = [
+                        // @asasflow:generated-casts:start
+                        // @asasflow:generated-casts:end
+                    ];
+                }
 
-PHP;
+            PHP;
     }
 
     protected function buildFillable(
@@ -111,23 +110,11 @@ PHP;
     ): string {
         $lines = [];
 
-        foreach (
-            array_keys($schema->properties())
-            as $field
-        ) {
-            $lines[] =
-                '        '
-                . var_export(
-                    $field,
-                    true
-                )
-                . ',';
+        foreach (array_keys($schema->properties()) as $field) {
+            $lines[] = '        '. var_export( $field, true ). ',';
         }
 
-        return implode(
-            PHP_EOL,
-            $lines
-        );
+        return implode( PHP_EOL, $lines);
     }
 
     protected function buildCasts(

@@ -169,7 +169,7 @@ return [
             'rules' => ['path' => 'app/Rules', 'generate' => false],
             'services' => ['path' => 'app/Services', 'generate' => false],
             'scopes' => ['path' => 'app/Models/Scopes', 'generate' => false],
-            'traits' => ['path' => 'app/Traits', 'generate' => false],
+            'traits' => ['path' => 'app/Traits', 'generate' => true],
 
             // app/Http/
             'controller' => ['path' => 'app/Http/Controllers', 'generate' => true],
@@ -177,7 +177,7 @@ return [
             'request' => ['path' => 'app/Http/Requests', 'generate' => false],
 
             // config/
-            'config' => ['path' => 'config', 'generate' => true],
+            'config' => ['path' => 'config', 'generate' => false],
 
             // database/
             'factory' => ['path' => 'database/factories', 'generate' => true],

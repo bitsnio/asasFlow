@@ -2,7 +2,7 @@
 
 namespace Bitsnio\AsasFlow\Console;
 
-use Bitsnio\AsasFlow\Console\Commands\ModuleCommands\ModuleMakeCommand;
+use Bitsnio\AsasFlow\Console\Commands\Module\MakeModuleCommand;
 use Illuminate\Support\Collection;
 use Bitsnio\AsasFlow\Console\Commands\Install;
 use Bitsnio\AsasFlow\Console\Commands\ControllerCommands\GenerateControllersCommand;
@@ -23,7 +23,7 @@ class ConsoleServiceProvider
             GenerateControllersCommand::class,
             GenerateFromSchemaCommand::class,
             // Module overrides
-            ModuleMakeCommand::class,
+            MakeModuleCommand::class,
         ]);
     }
 

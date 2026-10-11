@@ -43,15 +43,10 @@ class SchemaArtifactGenerator
         array &$results
     ): void {
         if ($definition->model) {
-            $schemaName =
-                $definition->schemaName
-                ?? $definition->modelClass();
+            $schemaName = $definition->schemaName ?? $definition->modelClass();
 
             $schemaPath =
-                $module->getPath()
-                . '/schema/'
-                . $schemaName
-                . '.json';
+                $module->getPath() . '/schema/' . $schemaName. '.json';
 
             if (!is_file($schemaPath)) {
                 $results[] = [

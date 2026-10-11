@@ -1,0 +1,32 @@
+<?php
+
+declare(strict_types=1);
+
+namespace {{ MODULE_NAMESPACE }}\Providers;
+
+use Bitsnio\AsasFlow\Providers\ModuleServiceProvider as BaseModuleServiceProvider;
+
+class {{ MODULE }}ServiceProvider extends BaseModuleServiceProvider
+{
+    protected string $name = '{{ MODULE }}';
+
+    protected string $nameLower = '{{ MODULE_LOWER }}';
+
+    /**
+     * Additional service providers required by this module.
+     *
+     * @var array<class-string>
+     */
+    protected array $providers = [
+        // \Modules\{{ MODULE }}\Providers\ExampleServiceProvider::class,
+    ];
+
+    /**
+     * Artisan commands provided by this module.
+     *
+     * @var array<class-string<\Illuminate\Console\Command>>
+     */
+    protected array $commands = [
+        // \Modules\{{ MODULE }}\Console\ExampleCommand::class,
+    ];
+}

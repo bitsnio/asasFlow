@@ -1,0 +1,7 @@
+<?php
+
+use Illuminate\Support\Facades\Route;
+
+Route::prefix('{{ MODULE_LOWER }}')->group(function (): void {
+    // Add module API routes here.
+});

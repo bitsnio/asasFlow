@@ -18,7 +18,7 @@ class MigrationGenerator
         MenuDefinition $definition,
         SchemaDefinition $schema
     ): array {
-        $migrationPath = $module->getPath(). '/database/migrations';
+        $migrationPath = $module->getmigrationsPath();
 
         $table =
             $definition->config['model']['table']

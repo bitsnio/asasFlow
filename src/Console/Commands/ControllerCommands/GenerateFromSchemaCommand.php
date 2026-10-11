@@ -5,7 +5,7 @@ namespace Bitsnio\AsasFlow\Console\Commands\ControllerCommands;
 use Bitsnio\AsasFlow\Foundation\Support\FileHandler;
 use Bitsnio\AsasFlow\Generators\Menu\MenuBuilder;
 use Bitsnio\AsasFlow\Generators\Schema\SchemaArtifactGenerator;
-use Bitsnio\Modules\Contracts\RepositoryInterface;
+use Bitsnio\AsasFlow\Foundation\Contracts\ModuleRepositoryInterface;
 use Illuminate\Console\Command;
 use Throwable;
 
@@ -24,7 +24,7 @@ class GenerateFromSchemaCommand extends Command
         protected SchemaArtifactGenerator $generator,
         protected MenuBuilder $definitionBuilder,
         protected FileHandler $files,
-        protected RepositoryInterface $moduleRepository,
+        protected ModuleRepositoryInterface $moduleRepository,
     ) {
         parent::__construct();
     }

@@ -1,0 +1,15 @@
+<?php
+
+declare(strict_types=1);
+
+namespace {{ MODULE_NAMESPACE }}\Jobs\Queues;
+
+final class {{ MODULE }}Queue
+{
+    public const NAME = '{{ MODULE_LOWER }}';
+
+    public static function name(): string
+    {
+        return self::NAME;
+    }
+}

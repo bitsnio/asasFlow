@@ -211,12 +211,12 @@ PHP;
         } else {
             $method = <<<PHP
 
-    public function register(): void
-    {
-{$registration}
-    }
+                    public function register(): void
+                    {
+                        {$registration}
+                    }
 
-PHP;
+                PHP;
 
             $position = strrpos($content, '}');
 
@@ -226,10 +226,7 @@ PHP;
                 );
             }
 
-            $content =
-                substr($content, 0, $position) .
-                $method .
-                substr($content, $position);
+            $content = substr($content, 0, $position) . $method . substr($content, $position);
         }
 
         $this->filesystem->put(
@@ -270,8 +267,7 @@ PHP;
         }
 
         $prefix =
-            $this->getModuleNamespace() .
-            '\\Settings\\';
+            $this->getModuleNamespace() . '\\Settings\\';
 
         $json['autoload']['psr-4'][$prefix] = 'Settings/';
 
@@ -356,10 +352,7 @@ PHP;
     {
         return $this->module->getModulePath(
             $this->moduleName
-        ) .
-            '/Settings/' .
-            $this->getSettingsClassName() .
-            '.php';
+        ) . '/Settings/' . $this->getSettingsClassName() . '.php';
     }
 
     protected function getSettingsMigrationPath(): string

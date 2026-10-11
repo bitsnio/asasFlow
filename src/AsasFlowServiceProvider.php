@@ -6,6 +6,11 @@ use Bitsnio\AsasFlow\Features\Cache\CacheServiceProvider;
 use Bitsnio\AsasFlow\Features\Settings\SettingsServiceProvider;
 use Bitsnio\AsasFlow\Features\Tenancy\TenancyServiceProvider;
 use Illuminate\Support\ServiceProvider;
+use Bitsnio\AsasFlow\Foundation\Contracts\ModuleRepositoryInterface;
+use Bitsnio\AsasFlow\Foundation\Support\ModuleRegistrar;
+use Bitsnio\AsasFlow\Foundation\Support\ModuleRepository;
+use Bitsnio\AsasFLow\Foundation\Support\ModuleDiscovery;
+
 use Bitsnio\AsasFlow\Features\Settings\Services\ModuleSettingsDiscovery;
 
 class AsasFlowServiceProvider extends ServiceProvider
@@ -15,34 +20,48 @@ class AsasFlowServiceProvider extends ServiceProvider
         // Register feature service providers
         $this->app->register(SettingsServiceProvider::class);
         $this->app->register(CacheServiceProvider::class);
-        $this->app->register(\Bitsnio\Modules\LaravelModulesServiceProvider::class);
+        // $this->app->register(\Bitsnio\Modules\LaravelModulesServiceProvider::class);
         // Register tenancy if enabled
         if (config('asasflow.tenancy.enabled', false)) {
             $this->app->register(TenancyServiceProvider::class);
         }
 
-         $this->app->booting(function () {
+
+        $this->app->booting(function () {
             if (config('asasflow.routes.enabled') === true) {
                 $this->loadRoutesFrom(__DIR__ . '/../routes/docs.php');
             }
         });
 
-         $this->mergeConfigFrom(__DIR__ . '/../config/asasflow.php', 'asasflow');
+
+
+        $this->app->bind(
+            ModuleRepositoryInterface::class,
+            ModuleRepository::class,
+        );
+
+        $this->app->singleton(ModuleDiscovery::class);
+        $this->app->singleton(ModuleRegistrar::class);
+
+        $this->mergeConfigFrom(__DIR__ . '/../config/asasflow.php', 'asasflow');
     }
 
     public function boot(): void
     {
+
+        // Register module entry-point providers through the new mechanism.
+        $this->app->make(ModuleRegistrar::class)->register();
         // Boot model observers for all modules
         $this->bootModuleObservers();
 
-         
+
         // $this->app
         //     ->make(ModuleSettingsDiscovery::class)
         //     ->discover();
 
-         $this->loadMigrationsFrom(
-        __DIR__ . '/../database/migrations'
-    );
+        $this->loadMigrationsFrom(
+            __DIR__ . '/../database/migrations'
+        );
 
         // Publishing + commands (console only)
         if ($this->app->runningInConsole()) {
@@ -64,7 +83,7 @@ class AsasFlowServiceProvider extends ServiceProvider
         }
 
         $modulesPath = config('asasflow.modules.path', base_path('Modules'));
-        
+
         if (!is_dir($modulesPath)) {
             return;
         }
@@ -72,7 +91,7 @@ class AsasFlowServiceProvider extends ServiceProvider
         foreach (glob($modulesPath . '/*', GLOB_ONLYDIR) as $modulePath) {
             $module = basename($modulePath);
             $observerPath = $modulePath . '/Observers';
-            
+
             if (!is_dir($observerPath)) {
                 continue;
             }
@@ -99,7 +118,7 @@ class AsasFlowServiceProvider extends ServiceProvider
         // Extract model name from observer filename: UserCacheObserver -> User
         $observerName = basename($observerFile, '.php');
         $modelName = str_replace('CacheObserver', '', $observerName);
-        
+
         $class = "Modules\\{$module}\\Models\\{$modelName}";
         return class_exists($class) ? $class : null;
     }

@@ -1,7 +1,7 @@
 <?php
 
 return [
-
+    'version' => env('ASASFLOW_VERSION'),
     "modules" => [
         "enabled" => true,
         "path" => base_path("Modules"),

@@ -7,6 +7,7 @@ namespace Bitsnio\AsasFlow\Foundation\Support;
 use Bitsnio\AsasFlow\Foundation\Contracts\ModuleRepositoryInterface;
 use Illuminate\Support\Facades\File;
 use InvalidArgumentException;
+use JsonException;
 
 final class ModuleDiscovery
 {
@@ -20,8 +21,15 @@ final class ModuleDiscovery
      *     alias: string,
      *     namespace: string,
      *     path: string,
-     *     provider: class-string
+     *     provider: class-string,
+     *     version: string|null,
+     *     enabled: bool,
+     *     requires: array<string, string>,
+     *     compatibility: array<string, mixed>
      * }>
+     *
+     * @throws InvalidArgumentException
+     * @throws JsonException
      */
     public function all(): array
     {
@@ -33,8 +41,10 @@ final class ModuleDiscovery
         $aliases = [];
 
         foreach ($this->modules->all() as $module) {
-            $manifestPath = $module->path . DIRECTORY_SEPARATOR . 'module.json';
-            
+            $manifestPath = $module->path
+                . DIRECTORY_SEPARATOR
+                . 'module.json';
+
             if (! File::isFile($manifestPath)) {
                 throw new InvalidArgumentException(
                     "Module manifest not found: {$manifestPath}"
@@ -58,19 +68,27 @@ final class ModuleDiscovery
             $alias = $manifest['alias'] ?? null;
             $namespace = $manifest['namespace'] ?? null;
             $provider = $manifest['provider'] ?? null;
+            $enabled = $manifest['enabled'] ?? true;
+            $requires = $manifest['requires'] ?? [];
+            $compatibility = $manifest['compatibility'] ?? [];
+            $version = $this->resolveVersion($manifest, $module->path);
 
             if (
                 ! is_string($name)
                 || $name !== $module->name
                 || ! is_string($alias)
-                || $alias === ''
+                || ! preg_match('/^[a-z][a-z0-9_-]*$/', $alias)
                 || ! is_string($namespace)
-                || $namespace === ''
+                || trim($namespace, '\\') === ''
                 || ! is_string($provider)
-                || $provider === ''
+                || trim($provider) === ''
+                || ! is_bool($enabled)
+                || ! is_array($requires)
+                || ! is_array($compatibility)
             ) {
                 throw new InvalidArgumentException(
-                    "Module manifest has missing or invalid required fields: {$manifestPath}"
+                    "Module manifest has missing or invalid fields: "
+                    . $manifestPath
                 );
             }
 
@@ -81,12 +99,23 @@ final class ModuleDiscovery
                 );
             }
 
-            $aliases[$alias] = $name;
-
-            // Individual modules are enabled by default unless explicitly disabled.
-            if (($manifest['enabled'] ?? true) !== true) {
-                continue;
+            foreach ($requires as $dependencyAlias => $constraint) {
+                if (
+                    ! is_string($dependencyAlias)
+                    || ! preg_match(
+                        '/^[a-z][a-z0-9_-]*$/',
+                        $dependencyAlias
+                    )
+                    || ! is_string($constraint)
+                    || trim($constraint) === ''
+                ) {
+                    throw new InvalidArgumentException(
+                        "Invalid dependency declaration in [{$name}]."
+                    );
+                }
             }
+
+            $aliases[$alias] = $name;
 
             $discovered[$name] = [
                 'name' => $name,
@@ -94,9 +123,49 @@ final class ModuleDiscovery
                 'namespace' => trim($namespace, '\\'),
                 'path' => $module->path,
                 'provider' => $provider,
+                'version' => $version,
+                'enabled' => $enabled,
+                'requires' => $requires,
+                'compatibility' => $compatibility,
             ];
         }
 
         return $discovered;
+    }
+
+    /**
+     * Local modules should declare their version in module.json.
+     * composer.json is a fallback for Composer-managed module packages.
+     *
+     * @param array<string, mixed> $manifest
+     */
+    private function resolveVersion(array $manifest, string $path): ?string
+    {
+        $version = $manifest['version'] ?? null;
+
+        if (is_string($version) && trim($version) !== '') {
+            return ltrim(trim($version), 'v');
+        }
+
+        $composerPath = $path . DIRECTORY_SEPARATOR . 'composer.json';
+
+        if (File::isFile($composerPath)) {
+            $composer = json_decode(
+                File::get($composerPath),
+                true,
+                512,
+                JSON_THROW_ON_ERROR,
+            );
+
+            if (
+                is_array($composer)
+                && is_string($composer['version'] ?? null)
+                && trim($composer['version']) !== ''
+            ) {
+                return ltrim(trim($composer['version']), 'v');
+            }
+        }
+
+        return null;
     }
 }

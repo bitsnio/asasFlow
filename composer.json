@@ -28,7 +28,8 @@
     "php-open-source-saver/jwt-auth": "^2.9.0",
     "spatie/laravel-permission": "^7.3.0",
     "spatie/laravel-settings": "^3.7.2",
-    "wikimedia/composer-merge-plugin": "^2.1"
+    "wikimedia/composer-merge-plugin": "^2.1",
+    "composer/semver": "^3.0@dev"
   },
   "require-dev": {
     "laravel/framework": "^13.0",

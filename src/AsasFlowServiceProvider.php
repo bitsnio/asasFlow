@@ -9,7 +9,7 @@ use Illuminate\Support\ServiceProvider;
 use Bitsnio\AsasFlow\Foundation\Contracts\ModuleRepositoryInterface;
 use Bitsnio\AsasFlow\Foundation\Support\ModuleRegistrar;
 use Bitsnio\AsasFlow\Foundation\Support\ModuleRepository;
-use Bitsnio\AsasFLow\Foundation\Support\ModuleDiscovery;
+use Bitsnio\AsasFlow\Foundation\Support\ModuleDiscovery;
 
 use Bitsnio\AsasFlow\Features\Settings\Services\ModuleSettingsDiscovery;
 
@@ -17,11 +17,25 @@ class AsasFlowServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
-        // Register feature service providers
+       
+        // $this->app->register(\Bitsnio\Modules\LaravelModulesServiceProvider::class);
+       
+
+        $this->mergeConfigFrom(__DIR__ . '/../config/asasflow.php', 'asasflow');
+
+         // Register feature service providers
         $this->app->register(SettingsServiceProvider::class);
         $this->app->register(CacheServiceProvider::class);
-        // $this->app->register(\Bitsnio\Modules\LaravelModulesServiceProvider::class);
-        // Register tenancy if enabled
+
+        $this->app->bind(
+            ModuleRepositoryInterface::class,
+            ModuleRepository::class,
+        );
+
+        $this->app->singleton(ModuleDiscovery::class);
+        $this->app->singleton(ModuleRegistrar::class);
+
+         // Register tenancy if enabled
         if (config('asasflow.tenancy.enabled', false)) {
             $this->app->register(TenancyServiceProvider::class);
         }
@@ -32,18 +46,6 @@ class AsasFlowServiceProvider extends ServiceProvider
                 $this->loadRoutesFrom(__DIR__ . '/../routes/docs.php');
             }
         });
-
-
-
-        $this->app->bind(
-            ModuleRepositoryInterface::class,
-            ModuleRepository::class,
-        );
-
-        $this->app->singleton(ModuleDiscovery::class);
-        $this->app->singleton(ModuleRegistrar::class);
-
-        $this->mergeConfigFrom(__DIR__ . '/../config/asasflow.php', 'asasflow');
     }
 
     public function boot(): void

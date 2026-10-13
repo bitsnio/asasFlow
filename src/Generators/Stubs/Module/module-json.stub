@@ -3,5 +3,10 @@
     "alias": "{{ MODULE_LOWER }}",
     "namespace": "{{ MODULE_NAMESPACE_JSON }}",
     "provider": "{{ MODULE_PROVIDER_JSON }}",
-    "enabled":true
+    "version": "{{ MODULE_VERSION }}",
+    "enabled": true,
+    "requires": {},
+    "compatibility": {
+        "asasflow": "^1.0"
+    }
 }

@@ -1,0 +1,22 @@
+<?php
+
+use Illuminate\Support\Facades\Route;
+
+/*
+|--------------------------------------------------------------------------
+| Custom Module API Routes
+|--------------------------------------------------------------------------
+|
+| Routes in this file are not automatically wrapped in the module-wide
+| auth:api middleware group. Apply the required middleware explicitly.
+|
+*/
+
+Route::prefix('{{ MODULE_LOWER }}')->group(function (): void {
+    // Example:
+    //
+    // Route::middleware('auth:api')->get(
+    //     'reports/summary',
+    //     [ReportController::class, 'summary']
+    // );
+});

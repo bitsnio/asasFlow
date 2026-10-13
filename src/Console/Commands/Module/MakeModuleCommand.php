@@ -8,6 +8,7 @@ use Bitsnio\AsasFlow\Foundation\Support\ModuleDefinition;
 use Bitsnio\AsasFlow\Generators\Module\ModuleGenerator;
 use Illuminate\Console\Command;
 use Illuminate\Support\Str;
+use Composer\Semver\VersionParser;
 use InvalidArgumentException;
 use Throwable;
 
@@ -15,6 +16,7 @@ final class MakeModuleCommand extends Command
 {
     protected $signature = 'asasflow:make-module
                             {name : Name of the module to create}
+                            {--version=1.0.0 : The initial module version}
                             {--force : Replace existing generated files}';
 
     protected $description = 'Create an API-focused AsasFlow module.';
@@ -23,6 +25,17 @@ final class MakeModuleCommand extends Command
     {
         try {
             $input = trim((string) $this->argument('name'));
+
+            $version = (string) $this->option('version');
+
+            try {
+                (new VersionParser())->normalize($version);
+            } catch (\UnexpectedValueException $exception) {
+                throw new InvalidArgumentException(
+                    "Invalid module version [{$version}]. Use a valid version such as 1.0.0.",
+                    previous: $exception,
+                );
+            }
 
             if (
                 $input === ''
@@ -61,7 +74,7 @@ final class MakeModuleCommand extends Command
             if (is_dir($path) && ! $this->option('force')) {
                 $this->error(
                     "Module [{$name}] already exists. "
-                    . 'Use --force only if you intend to replace generated files.'
+                        . 'Use --force only if you intend to replace generated files.'
                 );
 
                 return self::FAILURE;
@@ -94,7 +107,7 @@ final class MakeModuleCommand extends Command
             $this->newLine();
             $this->comment(
                 'Review the generated module manifest and run '
-                . '`composer dump-autoload` in the host project.'
+                    . '`composer dump-autoload` in the host project.'
             );
 
             return self::SUCCESS;

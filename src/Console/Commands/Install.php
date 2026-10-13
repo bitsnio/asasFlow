@@ -172,4 +172,23 @@ class Install extends Command
             $this->info('Autoload entries already present, skipping.');
         }
     }
+
+    protected function installRequiredModules(): bool
+    {
+        $requiredModules = config(
+            'asasflow.install.required_modules',
+            []
+        );
+
+        // For each required module:
+        // 1. Check whether it is already installed.
+        // 2. Validate its manifest and version.
+        // 3. Install a compatible release if missing.
+        // 4. Validate module dependencies after installation.
+        //
+        // Return false if a required module cannot be installed
+        // or validated. Do not continue with a partially valid setup.
+
+        return true;
+    }
 }

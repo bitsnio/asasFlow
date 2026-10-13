@@ -573,4 +573,21 @@ return [
             ],
         ],
     ],
+    'install' => [
+        /*
+     * Modules required for a usable AsasFlow installation.
+     */
+        'required_modules' => [
+            'system' => [
+                'version' => '^1.0',
+                'source' => env('ASASFLOW_SYSTEM_MODULE_SOURCE'),
+                'sha256' => env('ASASFLOW_SYSTEM_MODULE_SHA256'),
+            ],
+        ],
+
+        /*
+     * Require an explicit confirmation before installing remote modules.
+     */
+        'confirm_remote_install' => true,
+    ],
 ];

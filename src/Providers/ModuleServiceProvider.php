@@ -8,7 +8,8 @@ use Illuminate\Support\ServiceProvider;
 use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
 use FilesystemIterator;
-use Illuminate\Support\Str;
+use LogicException;
+use UnexpectedValueException;
 
 abstract class ModuleServiceProvider extends ServiceProvider
 {
@@ -23,7 +24,7 @@ abstract class ModuleServiceProvider extends ServiceProvider
     public function __construct($app)
     {
         if (! isset($this->name, $this->nameLower)) {
-            throw new \LogicException(
+            throw new LogicException(
                 'Module service provider must define both $name and $nameLower properties.'
             );
         }
@@ -39,7 +40,6 @@ abstract class ModuleServiceProvider extends ServiceProvider
 
         $this->registerModuleConfig();
     }
-
 
     protected function registerModuleConfig(): void
     {
@@ -62,30 +62,17 @@ abstract class ModuleServiceProvider extends ServiceProvider
             }
 
             $filePath = $file->getPathname();
+            $relativePath = substr($filePath, strlen($configPath) + 1);
+            $relativeKey = str_replace([DIRECTORY_SEPARATOR, '.php'], ['.', ''], $relativePath);
 
-            $relativePath = substr(
-                $filePath,
-                strlen($configPath) + 1,
-            );
-
-            $relativeKey = str_replace(
-                [DIRECTORY_SEPARATOR, '.php'],
-                ['.', ''],
-                $relativePath,
-            );
-
-            // config/config.php is the module's primary config.
+            // config/config.php serves as the module's primary configuration.
             if ($relativeKey === 'config') {
                 $key = $this->nameLower;
             } else {
-                $segments = explode(
-                    '.',
-                    'modules.' . $this->nameLower . '.' . $relativeKey,
-                );
+                $segments = explode('.', 'modules.' . $this->nameLower . '.' . $relativeKey);
 
                 // Avoid adjacent duplicate segments.
                 $normalized = [];
-
                 foreach ($segments as $segment) {
                     if (end($normalized) !== $segment) {
                         $normalized[] = $segment;
@@ -98,7 +85,7 @@ abstract class ModuleServiceProvider extends ServiceProvider
             $moduleConfig = require $filePath;
 
             if (! is_array($moduleConfig)) {
-                throw new \UnexpectedValueException(
+                throw new UnexpectedValueException(
                     "Module config must return an array: {$filePath}"
                 );
             }
@@ -125,7 +112,6 @@ abstract class ModuleServiceProvider extends ServiceProvider
             . ($path !== '' ? DIRECTORY_SEPARATOR . ltrim($path, DIRECTORY_SEPARATOR) : '');
     }
 
-
     protected function registerTranslations(): void
     {
         $langPath = $this->modulePath('lang');
@@ -138,6 +124,30 @@ abstract class ModuleServiceProvider extends ServiceProvider
         $this->loadJsonTranslationsFrom($langPath);
     }
 
+    protected function registerRoutes(): void
+    {
+        $routeFiles = [
+            'routes/api.php',
+            'routes/custom.php',
+        ];
+
+        foreach ($routeFiles as $routeFile) {
+            $routesPath = $this->modulePath($routeFile);
+
+            if (is_file($routesPath)) {
+                $this->loadRoutesFrom($routesPath);
+            }
+        }
+    }
+
+    protected function registerMigrations(): void
+    {
+        $migrationsPath = $this->modulePath('database/migrations');
+
+        if (is_dir($migrationsPath)) {
+            $this->loadMigrationsFrom($migrationsPath);
+        }
+    }
 
     public function boot(): void
     {
@@ -145,16 +155,8 @@ abstract class ModuleServiceProvider extends ServiceProvider
 
         $this->registerTranslations();
 
-        $routesPath = $this->modulePath('routes/api.php');
+        $this->registerRoutes();
 
-        if (is_file($routesPath)) {
-            $this->loadRoutesFrom($routesPath);
-        }
-
-        $migrationsPath = $this->modulePath('database/migrations');
-
-        if (is_dir($migrationsPath)) {
-            $this->loadMigrationsFrom($migrationsPath);
-        }
+        $this->registerMigrations();
     }
 }

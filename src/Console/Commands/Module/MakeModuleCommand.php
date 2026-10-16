@@ -16,7 +16,7 @@ final class MakeModuleCommand extends Command
 {
     protected $signature = 'asasflow:make-module
                             {name : Name of the module to create}
-                            {--version=1.0.0 : The initial module version}
+                            {--module-version=1.0.0 : The initial module version}
                             {--force : Replace existing generated files}';
 
     protected $description = 'Create an API-focused AsasFlow module.';
@@ -24,9 +24,10 @@ final class MakeModuleCommand extends Command
     public function handle(ModuleGenerator $generator): int
     {
         try {
-            $input = trim((string) $this->argument('name'));
+            $input = trim((string)$this->argument('name'));
 
-            $version = (string) $this->option('version');
+            // Updated option name to avoid collision with Symfony's global --version
+            $version = (string)$this->option('module-version');
 
             try {
                 (new VersionParser())->normalize($version);
@@ -41,7 +42,7 @@ final class MakeModuleCommand extends Command
                 $input === ''
                 || str_contains($input, '/')
                 || str_contains($input, '\\')
-                || ! preg_match('/^[A-Za-z][A-Za-z0-9 _-]*$/', $input)
+                || ! preg_match('/^[A-Za-z][A-Za-z0-9 _-]*$/',$input)
             ) {
                 throw new InvalidArgumentException(
                     "Invalid module name [{$input}]."
@@ -50,7 +51,7 @@ final class MakeModuleCommand extends Command
 
             $name = Str::studly($input);
 
-            if (! preg_match('/^[A-Za-z][A-Za-z0-9_]*$/', $name)) {
+            if (! preg_match('/^[A-Za-z][A-Za-z0-9_]*$/',$name)) {
                 throw new InvalidArgumentException(
                     "Invalid normalized module name [{$name}]."
                 );
@@ -71,8 +72,7 @@ final class MakeModuleCommand extends Command
 
             $path = $modulesPath . DIRECTORY_SEPARATOR . $name;
 
-            if (is_dir($path) && ! $this->option('force')) {
-                $this->error(
+            if (is_dir($path) && ! $this->option('force')) {$this->error(
                     "Module [{$name}] already exists. "
                         . 'Use --force only if you intend to replace generated files.'
                 );
@@ -83,19 +83,18 @@ final class MakeModuleCommand extends Command
             $module = new ModuleDefinition(
                 name: $name,
                 path: $path,
-                namespace: $namespace . '\\' . $name,
+                namespace: $namespace . '\\' .$name,
             );
-
-            $results = $generator->generate(
-                $module,
+         
+            $results = $generator->generate($module,
                 (bool) $this->option('force'),
             );
 
             $this->newLine();
             $this->info("Module [{$name}] scaffolding completed.");
 
-            foreach ($results as $result) {
-                $action = $result['action'] === 'generated'
+            foreach ($results as$result) {
+                $action =$result['action'] === 'generated'
                     ? 'Created'
                     : 'Skipped';
 
@@ -104,8 +103,7 @@ final class MakeModuleCommand extends Command
                 );
             }
 
-            $this->newLine();
-            $this->comment(
+            $this->newLine();$this->comment(
                 'Review the generated module manifest and run '
                     . '`composer dump-autoload` in the host project.'
             );

@@ -355,6 +355,17 @@ return [
                     'replacements' => [],
                 ],
             ],
+            'custom_routes' => [
+                'type' => 'directory',
+                'enabled' => true,
+                'path' => 'routes',
+                'stub' => [
+                    'enabled' => true,
+                    'path' => 'routes/custom.php',
+                    'stub' => 'Module/rout.stub',
+                    'replacements' => [],
+                ],
+            ],
             'tests_feature' => [
                 'type' => 'directory',
                 'enabled' => true,
@@ -580,14 +591,9 @@ return [
         'required_modules' => [
             'system' => [
                 'version' => '^1.0',
-                'source' => env('ASASFLOW_SYSTEM_MODULE_SOURCE'),
-                'sha256' => env('ASASFLOW_SYSTEM_MODULE_SHA256'),
+                'dev_url' => env('ASASFLOW_SYSTEM_MODULE_SOURCE'),
+                'release_url' => env('ASASFLOW_SYSTEM_MODULE_SHA256'),
             ],
         ],
-
-        /*
-     * Require an explicit confirmation before installing remote modules.
-     */
-        'confirm_remote_install' => true,
     ],
 ];

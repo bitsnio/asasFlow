@@ -19,7 +19,7 @@ final class ModuleRegistrar
     public function register(): void
     {
         $modules = $this->discovery->all();
-
+ 
         // Validate requirements and calculate provider registration order.
         $ordered = $this->dependencies->resolve($modules);
 

@@ -173,21 +173,55 @@ class Install extends Command
         }
     }
 
-    protected function installRequiredModules(): bool
-    {
-        $requiredModules = config(
-            'asasflow.install.required_modules',
-            []
-        );
 
-        // For each required module:
-        // 1. Check whether it is already installed.
-        // 2. Validate its manifest and version.
-        // 3. Install a compatible release if missing.
-        // 4. Validate module dependencies after installation.
-        //
-        // Return false if a required module cannot be installed
-        // or validated. Do not continue with a partially valid setup.
+    private function installRequiredModules(
+        \Bitsnio\AsasFlow\Foundation\Support\ModuleReleaseInstaller $installer
+    ): bool {
+        $modules = config('asasflow.install.required_modules', []);
+
+        if (!is_array($modules)) {
+            $this->components->error(
+                'Invalid asasflow.install.required_modules configuration.'
+            );
+
+            return false;
+        }
+
+        foreach ($modules as $alias => $definition) {
+            if (!is_array($definition)) {
+                $this->components->error(
+                    "Invalid configuration for module [{$alias}]."
+                );
+
+                return false;
+            }
+
+            try {
+                $result = $installer->install(
+                    alias: (string) $alias,
+                    definition: $definition,
+                    allowDevFallback: (bool) $this->option('allow-dev-fallback'),
+                    dryRun: (bool) $this->option('dry-run'),
+                );
+
+                $this->components->info(
+                    sprintf(
+                        '%s module [%s] using [%s].',
+                        $result['dry_run'] ? 'Validated' : 'Installed',
+                        $result['name'],
+                        $result['source'],
+                    )
+                );
+            } catch (\Throwable $e) {
+                report($e);
+
+                $this->components->error(
+                    "Failed to install module [{$alias}]: {$e->getMessage()}"
+                );
+
+                return false;
+            }
+        }
 
         return true;
     }

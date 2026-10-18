@@ -1,11 +1,11 @@
 <?php
 
-namespace {{ namespace }};
+namespace {{ NAMESPACE }};
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
-class {{ class }} extends Model
+class {{ CLASS }} extends Model
 {
     use SoftDeletes;
 

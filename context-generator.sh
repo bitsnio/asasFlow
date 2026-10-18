@@ -10,7 +10,7 @@
 
 # 1. INCLUDE_DIRS: Directories to process for your CURRENT requirement.
 #    Leave as empty array () to create context for the WHOLE PROJECT.
-INCLUDE_DIRS=("src")
+INCLUDE_DIRS=("src/Console/Commands" "src/Generators" "src/Foundation" )
 
 # 2. EXTRA_EXCLUDE_DIRS: Directories to SKIP. 
 #    These will be removed from BOTH the directory tree AND file scanning.
@@ -18,7 +18,7 @@ INCLUDE_DIRS=("src")
 EXTRA_EXCLUDE_DIRS=("stubs" "packages")
 
 # 3. INCLUDE_FILES: Specific files to force-include even if their folder is skipped.
-INCLUDE_FILES=("config/asasflow.php" "src/Foundation/Support/ModuleScaffolder.php" "src/Generators/Module/ModuleGenerator.php" "src/Generators/Model/ModelGenerator.php" "src/Console/Commands/Module/MakeModuleCommand.php" "src/AsasFlowServiceProvider.php")
+INCLUDE_FILES=("config/asasflow.php")
 # 4. CONTEXT_DIR: Directory where generated context files are saved.
 CONTEXT_DIR=".ai_contexts"
 

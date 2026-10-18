@@ -1,98 +1,215 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Bitsnio\AsasFlow\Generators\Route;
 
 use Bitsnio\AsasFlow\Foundation\Contracts\GeneratorInterface;
 use Bitsnio\AsasFlow\Foundation\Support\FileHandler;
-use Bitsnio\AsasFlow\Foundation\Support\MenuDefinition;
 use Bitsnio\AsasFlow\Foundation\Support\GeneratorSupport;
+use Bitsnio\AsasFlow\Foundation\Support\MenuDefinition;
+use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Str;
+use InvalidArgumentException;
 
 class RouteGenerator implements GeneratorInterface
 {
+    protected const DEFAULT_RESOURCE_ACTIONS = [
+        'index',
+        'store',
+        'show',
+        'update',
+        'destroy',
+    ];
+
+    // 1. Inject RouteActionSynchronizer in the constructor
     public function __construct(
         protected FileHandler $files,
         protected GeneratorSupport $support,
+        protected RouteActionSynchronizer $routeSynchronizer,
     ) {}
+
+    public function key(): string
+    {
+        return 'routes';
+    }
 
     public function generate(
         $module,
         array $definitions,
-        array $options = []
+        array $options = [],
     ): array {
-        $routeFile =
-            $this->files->getRoutesPath(
-                $module
+        $routeFile = $this->files->getRoutesPath($module);
+        $exists = $this->files->exists($routeFile);
+        $force = (bool) ($options['force'] ?? false);
+
+        if (!$exists || $force) {
+            $content = $this->buildRouteFile($module, $definitions);
+
+            $this->files->writeFile(
+                $routeFile,
+                $content,
+                true,
             );
 
-        $content =
-            $this->buildRouteFile(
-                $module,
-                $definitions
-            );
+            return [
+                [
+                    'path' => $routeFile,
+                    'action' => $exists ? 'regenerated' : 'created',
+                ],
+            ];
+        }
 
-        $this->files->writeFile(
-            $routeFile,
-            $content,
-            true
+        $document = $this->files->read($routeFile);
+
+        // 2. Delegate incremental route syncing to RouteActionSynchronizer
+        [$updatedDocument, $addedRoutes] = $this->syncMissingRoutes(
+            $module,
+            $document,
+            $definitions,
         );
+
+        if (!empty($addedRoutes)) {
+            $this->files->writeFile(
+                $routeFile,
+                $updatedDocument,
+                true,
+            );
+
+            return [
+                [
+                    'path' => $routeFile,
+                    'action' => 'updated (added: ' . implode(', ', $addedRoutes) . ')',
+                ],
+            ];
+        }
 
         return [
             [
                 'path' => $routeFile,
-                'action' => 'created/updated',
+                'action' => 'skipped (up-to-date)',
             ],
         ];
     }
 
-    public function preview(
+    protected function syncMissingRoutes(
         $module,
+        string $document,
         array $definitions,
-        array $options = []
     ): array {
-        $routeFile =
-            $this->files->getRoutesPath(
-                $module
+        $added = [];
+
+        foreach ($definitions as $definition) {
+            $this->syncNodeRoutes(
+                $module,
+                $definition,
+                [],
+                0,
+                $document,
+                $added,
             );
+        }
 
-        return [
-            [
-                'action' =>
-                $this->files->exists($routeFile)
-                    ? 'update'
-                    : 'create',
-
-                'file' => $routeFile,
-                'type' => 'routes',
-            ],
-        ];
+        return [$document, $added];
     }
 
+    protected function syncNodeRoutes(
+        $module,
+        MenuDefinition $definition,
+        array $parentMiddleware,
+        int $level,
+        string &$document,
+        array &$added,
+    ): void {
+        if ($definition->isResource() && $definition->hasController()) {
+            $controllerClass = $definition->controllerClass;
+            $fqcn = $this->support->controllerNamespace($module, $definition) . '\\' . $controllerClass;
+
+            if (!$this->routeSynchronizer->hasApiResourceRoute($document, $definition)) {
+                $document = $this->routeSynchronizer->ensureImportExists($document, $fqcn);
+
+                $additionalMiddleware = array_values(
+                    array_diff($definition->middleware, $parentMiddleware),
+                );
+
+                $resourceSnippet = trim($this->buildResourceRoute(
+                    $module,
+                    $definition,
+                    $additionalMiddleware,
+                    $level,
+                ));
+
+                $document = $this->routeSynchronizer->insertRouteIntoParentGroup(
+                    $document,
+                    $definition,
+                    $resourceSnippet,
+                    $level,
+                );
+
+                $added[] = Str::kebab($definition->name);
+            }
+
+            foreach ($definition->customActions() as $actionName => $config) {
+                $methodName = Str::camel($actionName);
+
+                if (!$this->routeSynchronizer->hasCustomActionRoute($document, $controllerClass, $methodName)) {
+                    $document = $this->routeSynchronizer->ensureImportExists($document, $fqcn);
+
+                    $additionalMiddleware = array_values(
+                        array_diff($definition->middleware, $parentMiddleware),
+                    );
+
+                    $actionRouteSnippet = trim($this->buildResourceActionRoute(
+                        $module,
+                        $definition,
+                        $actionName,
+                        $definition->customActionMethod($actionName),
+                        $additionalMiddleware,
+                        $level,
+                    ));
+
+                    $document = $this->routeSynchronizer->insertAfterControllerRoutes(
+                        $document,
+                        $controllerClass,
+                        $actionRouteSnippet,
+                        $level,
+                    );
+
+                    $added[] = Str::kebab($definition->name) . '/' . Str::kebab($actionName);
+                }
+            }
+        }
+
+        foreach ($definition->children as $child) {
+            $this->syncNodeRoutes(
+                $module,
+                $child,
+                $definition->middleware,
+                $level + 1,
+                $document,
+                $added,
+            );
+        }
+    }
 
     protected function buildRouteFile(
         $module,
-        array $definitions
+        array $definitions,
     ): string {
         $controllers = $this->collectControllers($definitions);
 
         $imports = [
-            \Illuminate\Support\Facades\Route::class,
+            Route::class,
         ];
 
         foreach ($controllers as $definition) {
-            $imports[] = $this->support->controllerNamespace(
-                $module,
-                $definition
-            ) . '\\' . $definition->controllerClass;
+            $imports[] = $this->support->controllerNamespace($module, $definition)
+                . '\\'
+                . $definition->controllerClass;
         }
 
         $content = "<?php\n\n";
-
-        $content .= $this->support->generatorImports(
-            'route',
-            $imports
-        );
-
+        $content .= $this->support->generatorImports('route', $imports);
         $content .= "\n\n";
 
         foreach ($definitions as $definition) {
@@ -100,7 +217,7 @@ class RouteGenerator implements GeneratorInterface
                 $module,
                 $definition,
                 [],
-                0
+                0,
             );
         }
 
@@ -111,40 +228,25 @@ class RouteGenerator implements GeneratorInterface
         $module,
         MenuDefinition $definition,
         array $parentMiddleware,
-        int $level
+        int $level,
     ): string {
-        $indent =
-            str_repeat('    ', $level);
+        $indent = str_repeat('    ', $level);
 
-        $additionalMiddleware =
-            array_values(
-                array_diff(
-                    $definition->middleware,
-                    $parentMiddleware
-                )
-            );
+        $additionalMiddleware = array_values(
+            array_diff($definition->middleware, $parentMiddleware),
+        );
 
         $content = '';
 
-        /*
-         * Resource
-         */
-        if (
-            $definition->isResource() &&
-            $definition->controllerClass
-        ) {
-            $content .=
-                $this->buildResourceRoute(
-                    $module,
-                    $definition,
-                    $additionalMiddleware,
-                    $level
-                );
+        if ($definition->isResource() && $definition->hasController()) {
+            $content .= $this->buildResourceRoute(
+                $module,
+                $definition,
+                $additionalMiddleware,
+                $level,
+            );
         }
 
-        /*
-     * Custom actions belong to this resource controller.
-     */
         foreach ($definition->customActions() as $actionName => $config) {
             $content .= $this->buildResourceActionRoute(
                 $module,
@@ -152,69 +254,37 @@ class RouteGenerator implements GeneratorInterface
                 $actionName,
                 $definition->customActionMethod($actionName),
                 $additionalMiddleware,
-                $level
+                $level,
             );
         }
 
-        // /*
-        //  * Action
-        //  */
-        // if ($definition->isAction()) {
-        //     $content .=
-        //         $this->buildActionRoute(
-        //             $definition,
-        //             $additionalMiddleware,
-        //             $level
-        //         );
-        // }
+        if (!empty($definition->children)) {
+            $segment = Str::kebab($definition->name);
 
-        /*
-         * Children / group
-         */
-        if (
-            !empty($definition->children)
-        ) {
-            $segment =
-                Str::kebab(
-                    $definition->name
-                );
-
-            $content .=
-                $indent
-                . "Route::prefix('{$segment}')";
+            $content .= $indent . "Route::prefix('{$segment}')";
 
             if ($additionalMiddleware) {
-                $content .=
-                    "\n"
+                $content .= "\n"
                     . $indent
-                    . "    ->middleware("
-                    . $this->phpArray(
-                        $additionalMiddleware
-                    )
-                    . ")";
+                    . '    ->middleware('
+                    . $this->phpArray($additionalMiddleware)
+                    . ')';
             }
 
-            $content .=
-                "\n"
+            $content .= "\n"
                 . $indent
                 . "    ->group(function () {\n";
 
-            foreach (
-                $definition->children
-                as $child
-            ) {
-                $content .=
-                    $this->buildNode(
-                        $module,
-                        $child,
-                        $definition->middleware,
-                        $level + 1
-                    );
+            foreach ($definition->children as $child) {
+                $content .= $this->buildNode(
+                    $module,
+                    $child,
+                    $definition->middleware,
+                    $level + 1,
+                );
             }
 
-            $content .=
-                $indent
-                . "});\n\n";
+            $content .= $indent . "});\n\n";
         }
 
         return $content;
@@ -224,49 +294,23 @@ class RouteGenerator implements GeneratorInterface
         $module,
         MenuDefinition $definition,
         array $middleware,
-        int $level
+        int $level,
     ): string {
-
         $indent = str_repeat('    ', $level);
-
-        // $controller = '\\'
-        //     . ltrim(
-        //         $this->support->controllerNamespace(
-        //             $module,
-        //             $definition
-        //         ) . '\\' . $definition->controllerClass,
-        //         '\\'
-        //     );
-
         $actions = $definition->routeActions();
 
-        $resource = "Route::apiResource(" . var_export(Str::kebab($definition->name), true) . ", {$definition->controllerClass}::class)";
+        $resource = 'Route::apiResource('
+            . var_export(Str::kebab($definition->name), true)
+            . ", {$definition->controllerClass}::class)";
 
-        $allActions = [
-            'index',
-            'store',
-            'show',
-            'update',
-            'destroy',
-        ];
-
-        if ($actions !== $allActions) {
+        if ($actions !== self::DEFAULT_RESOURCE_ACTIONS) {
             $resource .= '->only(' . $this->phpArray($actions) . ')';
         }
 
         $resource .= ';';
 
-        if (!$middleware) {
-            return $indent . $resource . "\n\n";
-        }
-
-        return $indent
-            . 'Route::middleware(' . $this->phpArray($middleware)
-            . ")->group(function () {\n"
-            . $indent . '    ' . $resource . "\n"
-            . $indent . "});\n\n";
+        return $this->wrapInMiddlewareGroup($resource, $middleware, $indent);
     }
-
 
     protected function buildResourceActionRoute(
         $module,
@@ -274,20 +318,9 @@ class RouteGenerator implements GeneratorInterface
         string $actionName,
         string $method,
         array $middleware,
-        int $level
+        int $level,
     ): string {
-        
         $indent = str_repeat('    ', $level);
-
-        // // $controller = '\\'
-        //     . ltrim(
-        //         $this->support->controllerNamespace(
-        //             $module,
-        //             $definition
-        //         ) . '\\' . $definition->controllerClass,
-        //         '\\'
-        //     );
-
         $uri = Str::kebab($definition->name) . '/' . Str::kebab($actionName);
 
         $route = 'Route::'
@@ -300,105 +333,42 @@ class RouteGenerator implements GeneratorInterface
             . var_export(Str::camel($actionName), true)
             . ']);';
 
+        return $this->wrapInMiddlewareGroup($route, $middleware, $indent);
+    }
+
+    protected function wrapInMiddlewareGroup(
+        string $routeStatement,
+        array $middleware,
+        string $indent,
+    ): string {
         if (!$middleware) {
-            return $indent . $route . "\n\n";
+            return $indent . $routeStatement . "\n\n";
         }
 
         return $indent
             . 'Route::middleware(' . $this->phpArray($middleware)
             . ")->group(function () {\n"
-            . $indent . '    ' . $route . "\n"
+            . $indent . '    ' . $routeStatement . "\n"
             . $indent . "});\n\n";
     }
-    protected function buildActionRoute(
-        MenuDefinition $definition,
-        array $middleware,
-        int $level
-    ): string {
-        $indent =
-            str_repeat('    ', $level);
 
-        $method =
-            strtolower(
-                $definition->actionMethod()
-            );
-
-        $path =
-            $definition->actionPath();
-
-        $controller =
-            $definition->controllerClass;
-
-        if (!$controller) {
-            throw new \InvalidArgumentException(
-                "Action ["
-                    . $definition->permissionKey()
-                    . "] requires a controller."
-            );
-        }
-
-        $route =
-            "Route::{$method}("
-            . "'{$path}', "
-            . $controller
-            . "::class)";
-
-        if ($definition->config['controller_method'] ?? null) {
-            $route =
-                "Route::{$method}("
-                . "'{$path}', ["
-                . $controller
-                . "::class, '"
-                . $definition->config['controller_method']
-                . "'])";
-        }
-
-        $route .= ";";
-
-        if (!$middleware) {
-            return
-                $indent
-                . $route
-                . "\n\n";
-        }
-
-        return
-            $indent
-            . "Route::middleware("
-            . $this->phpArray($middleware)
-            . ")->group(function () {\n"
-            . $indent
-            . "    "
-            . $route
-            . "\n"
-            . $indent
-            . "});\n\n";
-    }
-
-    protected function collectControllers(
-        array $definitions
-    ): array {
+    protected function collectControllers(array $definitions): array
+    {
         $result = [];
 
         foreach ($definitions as $definition) {
-            if ($definition->controllerClass) {
+            if ($definition->hasController()) {
                 $result[] = $definition;
             }
 
-            $result = [
-                ...$result,
-                ...$this->collectControllers(
-                    $definition->children
-                ),
-            ];
+            if (!empty($definition->children)) {
+                array_push($result, ...$this->collectControllers($definition->children));
+            }
         }
 
         return $result;
     }
 
-    /**
-     * Convert an array of values into a PHP array expression.
-     */
     protected function phpArray(array $values): string
     {
         if (empty($values)) {
@@ -406,8 +376,8 @@ class RouteGenerator implements GeneratorInterface
         }
 
         $items = array_map(
-            fn($value) => var_export($value, true),
-            $values
+            static fn($value) => var_export($value, true),
+            $values,
         );
 
         return '[' . implode(', ', $items) . ']';

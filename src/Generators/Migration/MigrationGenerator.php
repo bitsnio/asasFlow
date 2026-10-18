@@ -1,177 +1,127 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Bitsnio\AsasFlow\Generators\Migration;
 
+use Bitsnio\AsasFlow\Foundation\Contracts\SchemaArtifactGeneratorInterface;
 use Bitsnio\AsasFlow\Foundation\Support\FileHandler;
 use Bitsnio\AsasFlow\Foundation\Support\MenuDefinition;
 use Bitsnio\AsasFlow\Foundation\Support\SchemaDefinition;
+use Bitsnio\AsasFlow\Foundation\Support\StubRenderer;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Throwable;
 
-class MigrationGenerator
+class MigrationGenerator implements SchemaArtifactGeneratorInterface
 {
+    protected const IGNORED_COLUMNS = [
+        'id',
+        'created_at',
+        'updated_at',
+        'deleted_at',
+    ];
+
     public function __construct(
         protected FileHandler $files,
+        protected StubRenderer $stubs,
     ) {}
 
-    public function generate(
+    public function key(): string
+    {
+        return 'migrations';
+    }
+
+    public function syncFromSchema(
         $module,
         MenuDefinition $definition,
-        SchemaDefinition $schema
+        SchemaDefinition $schema,
+        array $options = [],
     ): array {
         $migrationPath = $module->migrationsPath();
+        $table = $definition->tableName();
 
-        $table =
-            $definition->config['model']['table']
-            ?? $definition->config['table']
-            ?? Str::snake(
-                Str::plural(
-                    $definition->modelClass()
-                )
-            );
+        $existing = $this->findCreateMigration(
+            $migrationPath,
+            $table,
+        );
 
-        $existing =
-            $this->findCreateMigration(
-                $migrationPath,
-                $table
-            );
+        $force = (bool) ($options['force'] ?? false);
 
-        if ($existing) {
+        if ($existing && !$force) {
             return [
                 'action' => 'skipped-existing',
                 'path' => $existing,
             ];
         }
 
-        $timestamp =
-            date('Y_m_d_His');
-
-        $class =
-            'Create'
-            . Str::studly($table)
-            . 'Table';
-
-        $filename =
-            $timestamp
+        $path = $existing ?? rtrim($migrationPath, '/')
+            . '/'
+            . date('Y_m_d_His')
             . '_create_'
             . $table
             . '_table.php';
 
-        $path =
-            $migrationPath
-            . '/'
-            . $filename;
+        $class = 'Create' . Str::studly($table) . 'Table';
 
-        $this->files->ensureDirectoryExists(
-            $migrationPath
-        );
+        $this->files->ensureDirectoryExists($migrationPath);
 
         $this->files->writeFile(
             $path,
-            $this->content(
-                $class,
-                $table,
-                $schema
-            ),
-            true
+            $this->content($class, $table, $schema),
+            true,
         );
 
         return [
-            'action' => 'created',
+            'action' => $existing ? 'regenerated' : 'created',
             'path' => $path,
         ];
     }
 
     protected function findCreateMigration(
         string $directory,
-        string $table
+        string $table,
     ): ?string {
         if (!$this->files->exists($directory)) {
             return null;
         }
 
-        foreach (
-            glob(
-                $directory
-                    . '/*_create_'
-                    . $table
-                    . '_table.php'
-            ) ?: []
-            as $file
-        ) {
-            return $file;
-        }
+        $matches = glob($directory . '/*_create_' . $table . '_table.php');
 
-        return null;
+        return !empty($matches) ? $matches[0] : null;
     }
 
     protected function content(
         string $class,
         string $table,
-        SchemaDefinition $schema
+        SchemaDefinition $schema,
     ): string {
         $columns = [];
 
-        foreach (
-            $schema->migrationColumns()
-            as $column
-        ) {
-            $columns[] =
-                $this->column(
-                    $column
-                );
+        foreach ($schema->migrationColumns() as $column) {
+            $line = $this->column($column);
+
+            if ($line !== '') {
+                $columns[] = '            ' . $line;
+            }
         }
 
-        $body =
-            implode(
-                PHP_EOL,
-                array_map(
-                    fn($line) =>
-                    '            '
-                        . $line,
-                    $columns
-                )
-            );
-
-        return <<<PHP
-                    <?php
-
-                    use Illuminate\Database\Migrations\Migration;
-                    use Illuminate\Database\Schema\Blueprint;
-                    use Illuminate\Support\Facades\Schema;
-
-                    return new class extends Migration
-                    {
-                        public function up(): void
-                        {
-                            Schema::create('{$table}', function (Blueprint \$table) {
-                                \$table->id();
-                    {$body}
-                                \$table->timestamps();
-                                \$table->softDeletes();
-                            });
-                        }
-
-                        public function down(): void
-                        {
-                            Schema::dropIfExists('{$table}');
-                        }
-                    };
-
-                    PHP;
+        return $this->stubs->renderFile(
+            'create-migration.stub',
+            [
+                'class' => $class,
+                'table' => $table,
+                'columns' => implode(PHP_EOL, $columns),
+            ],
+        );
     }
-
 
     protected function column(array $column): string
     {
         $name = $column['name'];
         $type = $column['type'];
 
-        if (in_array($name, [
-            'id',
-            'created_at',
-            'updated_at',
-            'deleted_at',
-        ], true)) {
+        if (in_array($name, self::IGNORED_COLUMNS, true)) {
             return '';
         }
 
@@ -196,28 +146,29 @@ class MigrationGenerator
         return $line . ';';
     }
 
-
     protected function jsonColumnMethod(): string
     {
-        $driver = \Illuminate\Support\Facades\DB::connection()
-            ->getDriverName();
+        try {
+            $driver = DB::connection()->getDriverName();
+        } catch (Throwable) {
+            $driver = 'mysql';
+        }
 
         return match ($driver) {
             'pgsql' => 'jsonb',
-            'mysql' => 'json',
             default => 'json',
         };
     }
-    
+
     protected function stringColumn(
         string $quotedName,
-        array $column
+        array $column,
     ): string {
         return match ($column['format'] ?? null) {
             'date' => "\$table->date({$quotedName})",
             'date-time' => "\$table->dateTime({$quotedName})",
+            'uuid' => "\$table->uuid({$quotedName})",
             default => "\$table->string({$quotedName})",
         };
     }
-
 }

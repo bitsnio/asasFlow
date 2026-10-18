@@ -1,28 +1,38 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Bitsnio\AsasFlow\Generators\Controller;
 
 use Bitsnio\AsasFlow\Foundation\Contracts\GeneratorInterface;
+use Bitsnio\AsasFlow\Foundation\Contracts\SchemaArtifactGeneratorInterface;
 use Bitsnio\AsasFlow\Foundation\Support\FileHandler;
 use Bitsnio\AsasFlow\Foundation\Support\GeneratedBlock;
-use Bitsnio\AsasFlow\Foundation\Support\StubRenderer;
+use Bitsnio\AsasFlow\Foundation\Support\GeneratorSupport;
 use Bitsnio\AsasFlow\Foundation\Support\MenuDefinition;
 use Bitsnio\AsasFlow\Foundation\Support\SchemaDefinition;
-use Bitsnio\AsasFlow\Foundation\Support\GeneratorSupport;
+use Bitsnio\AsasFlow\Foundation\Support\StubRenderer;
 use Illuminate\Support\Str;
 
-class ControllerGenerator implements GeneratorInterface
+class ControllerGenerator implements GeneratorInterface, SchemaArtifactGeneratorInterface
 {
+    // 1. Inject ControllerActionSynchronizer in the constructor
     public function __construct(
         protected FileHandler $files,
         protected StubRenderer $stubs,
-        protected GeneratorSupport $support
+        protected GeneratorSupport $support,
+        protected ControllerActionSynchronizer $actionSynchronizer,
     ) {}
+
+    public function key(): string
+    {
+        return 'controllers';
+    }
 
     public function generate(
         $module,
         array $definitions,
-        array $options = []
+        array $options = [],
     ): array {
         $results = [];
 
@@ -31,25 +41,7 @@ class ControllerGenerator implements GeneratorInterface
                 $module,
                 $definition,
                 $options,
-                $results
-            );
-        }
-
-        return $results;
-    }
-
-    public function preview(
-        $module,
-        array $definitions,
-        array $options = []
-    ): array {
-        $results = [];
-
-        foreach ($definitions as $definition) {
-            $this->previewNode(
-                $module,
-                $definition,
-                $results
+                $results,
             );
         }
 
@@ -59,294 +51,209 @@ class ControllerGenerator implements GeneratorInterface
     public function syncFromSchema(
         $module,
         MenuDefinition $definition,
-        SchemaDefinition $schema
+        SchemaDefinition $schema,
+        array $options = [],
     ): array {
         if (!$definition->hasController()) {
-            return [
-                'action' => 'skipped',
-            ];
+            return ['action' => 'skipped'];
         }
 
-        $path =
-            $this->files->getControllerPath(
-                $module,
-                $definition->controllerRelativePath()
-            );
-
-        if (!$this->files->exists($path)) {
-            return [
-                'action' => 'missing',
-                'path' => $path,
-            ];
-        }
-
-        $document =
-            $this->files->read($path);
-
-        if (
-            !GeneratedBlock::has(
-                $document,
-                'methods'
-            )
-        ) {
-            return [
-                'action' => 'skipped-no-marker',
-                'path' => $path,
-            ];
-        }
-
-        $this->files->updateGeneratedBlock(
-            $path,
-            'methods',
-            $this->methods(
-                $definition
-            )
+        return $this->createOrSyncController(
+            $module,
+            $definition,
+            (bool) ($options['force'] ?? false),
         );
-
-        return [
-            'action' => 'updated',
-            'path' => $path,
-        ];
     }
 
     protected function generateNode(
         $module,
         MenuDefinition $definition,
         array $options,
-        array &$results
+        array &$results,
     ): void {
         if ($definition->hasController()) {
-            $relative =
-                $definition->controllerRelativePath();
-
-            $path =
-                $this->files->getControllerPath(
-                    $module,
-                    $relative
-                );
-
-            $exists =
-                $this->files->exists($path);
-
-            if (!$exists) {
-                $this->files->writeFile(
-                    $path,
-                    $this->content(
-                        $module,
-                        $definition
-                    ),
-                    true
-                );
-            }
+            $result = $this->createOrSyncController(
+                $module,
+                $definition,
+                (bool) ($options['force'] ?? false),
+            );
 
             $results[] = [
-                'name' =>
-                $definition->controllerClass,
-
-                'path' => $relative,
-
-                'full_path' => $path,
-
-                'action' =>
-                $exists
-                    ? 'skipped'
-                    : 'created',
+                'name' => $definition->controllerClass,
+                'path' => $definition->controllerRelativePath(),
+                'full_path' => $result['path'],
+                'action' => $result['action'],
             ];
         }
 
-        foreach (
-            $definition->children
-            as $child
-        ) {
+        foreach ($definition->children as $child) {
             $this->generateNode(
                 $module,
                 $child,
                 $options,
-                $results
+                $results,
             );
         }
     }
 
-    protected function previewNode(
+    protected function createOrSyncController(
         $module,
         MenuDefinition $definition,
-        array &$results
-    ): void {
-        if ($definition->hasController()) {
-            $path =
-                $this->files->getControllerPath(
-                    $module,
-                    $definition->controllerRelativePath()
-                );
+        bool $force = false,
+    ): array {
+        $relative = $definition->controllerRelativePath();
+        $path = $this->files->getControllerPath($module, $relative);
+        $exists = $this->files->exists($path);
 
-            $results[] = [
-                'action' =>
-                $this->files->exists($path)
-                    ? 'keep'
-                    : 'create',
+        if (!$exists || $force) {
+            $this->files->writeFile(
+                $path,
+                $this->content($module, $definition),
+                true,
+            );
 
-                'file' => $path,
-
-                'type' => 'controller',
+            return [
+                'action' => $exists ? 'regenerated' : 'created',
+                'path' => $path,
             ];
         }
 
-        foreach (
-            $definition->children
-            as $child
-        ) {
-            $this->previewNode(
-                $module,
-                $child,
-                $results
-            );
+        $document = $this->files->read($path);
+
+        // 2. Delegate incremental method syncing to ControllerActionSynchronizer
+        [$updatedDocument, $addedMethods] = $this->actionSynchronizer->sync(
+            $document,
+            $this->methodMap($definition),
+        );
+
+        if (!empty($addedMethods)) {
+            $this->files->writeFile($path, $updatedDocument, true);
+
+            return [
+                'action' => 'updated (added: ' . implode(', ', $addedMethods) . ')',
+                'path' => $path,
+            ];
         }
+
+        if (GeneratedBlock::has($document, 'methods')) {
+            $this->files->updateGeneratedBlock(
+                $path,
+                'methods',
+                $this->methods($definition),
+            );
+
+            return [
+                'action' => 'updated',
+                'path' => $path,
+            ];
+        }
+
+        return [
+            'action' => 'skipped',
+            'path' => $path,
+        ];
     }
 
     protected function content(
         $module,
-        MenuDefinition $definition
+        MenuDefinition $definition,
     ): string {
         return $this->stubs->renderFile(
             'controller.stub',
             [
-                'NAMESPACE' => $this->support->controllerNamespace(
-                    $module,
-                    $definition
-                ),
-
+                'NAMESPACE' => $this->support->controllerNamespace($module, $definition),
                 'CLASS' => $definition->controllerClass,
-
-                'IMPORTS' => $this->imports(
-                    $module,
-                    $definition
-                ),
-
-                'TRAIT_IMPORTS' => $this->support->traitImports(
-                    'controller'
-                ),
-
-                'TRAITS' => $this->support->traitUsage(
-                    'controller'
-                ),
-
+                'IMPORTS' => $this->imports($module, $definition),
+                'TRAIT_IMPORTS' => $this->support->traitImports('controller'),
+                'TRAITS' => $this->support->traitUsage('controller'),
                 'METHODS' => $this->methods($definition),
-            ]
+            ],
         );
     }
 
-
     protected function imports(
         $module,
-        MenuDefinition $definition
+        MenuDefinition $definition,
     ): string {
         $imports = [];
-
         $actions = $definition->routeActions();
 
-        if (
-            in_array('store', $actions, true) ||
-            in_array('update', $actions, true)
-        ) {
-            $imports[] = $this->support->requestNamespace(
-                $module,
-                $definition
-            ) . '\\' . $definition->requestClass();
+        if (in_array('store', $actions, true) || in_array('update', $actions, true)) {
+            $imports[] = $this->support->requestNamespace($module, $definition)
+                . '\\'
+                . $definition->requestClass();
         }
 
         if ($definition->model) {
-            $imports[] = $this->support->modelNamespace(
-                $module
-            ) . '\\' . $definition->modelClass();
+            $imports[] = $this->support->modelNamespace($module)
+                . '\\'
+                . $definition->modelClass();
         }
 
         if ($definition->hasResource()) {
-            $imports[] = $this->support->resourceNamespace(
-                $module,
-                $definition
-            ) . '\\' . $definition->resourceClass;
+            $imports[] = $this->support->resourceNamespace($module, $definition)
+                . '\\'
+                . $definition->resourceClass;
         }
-
 
         if ($definition->customActions()) {
             $imports[] = \Illuminate\Http\Request::class;
         }
-        return $this->support->generatorImports(
-            'controller',
-            $imports
-        );
+
+        return $this->support->generatorImports('controller', $imports);
     }
 
-    protected function methods(
-        MenuDefinition $definition
-    ): string {
-        $methods = [];
+    protected function methodMap(MenuDefinition $definition): array
+    {
+        $map = [];
 
-        foreach (
-            $definition->routeActions()
-            as $action
-        ) {
-            $methods[] =
-                match ($action) {
-                    'index' =>
-                    $this->indexMethod(
-                        $definition
-                    ),
+        foreach ($definition->routeActions() as $action) {
+            $code = match ($action) {
+                'index' => $this->indexMethod($definition),
+                'store' => $this->storeMethod($definition),
+                'show' => $this->showMethod($definition),
+                'update' => $this->updateMethod($definition),
+                'destroy' => $this->destroyMethod($definition),
+                default => '',
+            };
 
-                    'store' =>
-                    $this->storeMethod(
-                        $definition
-                    ),
-
-                    'show' =>
-                    $this->showMethod(
-                        $definition
-                    ),
-
-                    'update' =>
-                    $this->updateMethod(
-                        $definition
-                    ),
-
-                    'destroy' =>
-                    $this->destroyMethod(
-                        $definition
-                    ),
-
-                    default => '',
-                };
+            if ($code !== '') {
+                $map[$action] = $code;
+            }
         }
 
         foreach (array_keys($definition->customActions()) as $actionName) {
-            $methods[] = $this->customActionMethod($actionName);
+            $methodName = Str::camel($actionName);
+            $map[$methodName] = $this->customActionMethod($actionName);
         }
 
-
-        return implode(
-            PHP_EOL . PHP_EOL,
-            array_filter($methods)
-        );
+        return $map;
     }
 
+    protected function methods(MenuDefinition $definition): string
+    {
+        return implode(
+            PHP_EOL . PHP_EOL,
+            array_values($this->methodMap($definition)),
+        );
+    }
 
     protected function customActionMethod(string $actionName): string
     {
         $method = Str::camel($actionName);
 
         return <<<PHP
-                public function {$method}(Request \$request)
-                {
-                    return response()->json([
-                        'message' => '{$method} not implemented',
-                    ], 501);
-                }
-                PHP;
+            public function {$method}(Request \$request)
+            {
+                return response()->json([
+                    'message' => '{$method} not implemented',
+                ], 501);
+            }
+        PHP;
     }
 
-    protected function indexMethod(
-        MenuDefinition $definition
-    ): string {
-
+    protected function indexMethod(MenuDefinition $definition): string
+    {
         if (!$definition->model) {
             return <<<'PHP'
                 public function index()
@@ -358,22 +265,14 @@ class ControllerGenerator implements GeneratorInterface
             PHP;
         }
 
-        $paginationEnabled = $this->support->featureEnabled(
-            'controller',
-            'pagination'
-        );
-
-        $paginationConfig = $this->support->featureConfig(
-            'controller',
-            'pagination',
-            []
-        );
+        $paginationEnabled = $this->support->featureEnabled('controller', 'pagination');
+        $paginationConfig = $this->support->featureConfig('controller', 'pagination', []);
 
         $perPage = is_array($paginationConfig)
             ? filter_var(
                 $paginationConfig['per_page'] ?? 20,
                 FILTER_VALIDATE_INT,
-                ['options' => ['min_range' => 1]]
+                ['options' => ['min_range' => 1]],
             )
             : 20;
 
@@ -397,16 +296,15 @@ class ControllerGenerator implements GeneratorInterface
         }
 
         return <<<PHP
-                    public function index()
-                    {
-                        return {$query};
-                    }
-                PHP;
+            public function index()
+            {
+                return {$query};
+            }
+        PHP;
     }
 
-    protected function storeMethod(
-        MenuDefinition $definition
-    ): string {
+    protected function storeMethod(MenuDefinition $definition): string
+    {
         if (!$definition->model) {
             return <<<PHP
                 public function store(
@@ -419,11 +317,8 @@ class ControllerGenerator implements GeneratorInterface
             PHP;
         }
 
-        $return =
-            $definition->hasResource()
-            ? 'return new '
-            . $definition->resourceClass
-            . '($item);'
+        $return = $definition->hasResource()
+            ? "return new {$definition->resourceClass}(\$item);"
             : 'return $item;';
 
         return <<<PHP
@@ -439,11 +334,9 @@ class ControllerGenerator implements GeneratorInterface
         PHP;
     }
 
-    protected function showMethod(
-        MenuDefinition $definition
-    ): string {
-        $parameter =
-            $definition->parameterName();
+    protected function showMethod(MenuDefinition $definition): string
+    {
+        $parameter = $definition->parameterName();
 
         if (!$definition->model) {
             return <<<PHP
@@ -457,88 +350,78 @@ class ControllerGenerator implements GeneratorInterface
             PHP;
         }
 
-        $return =
-            $definition->hasResource()
-            ? 'return new '
-            . $definition->resourceClass
-            . "(\${$parameter});"
+        $return = $definition->hasResource()
+            ? "return new {$definition->resourceClass}(\${$parameter});"
             : "return \${$parameter};";
 
         return <<<PHP
-                    public function show(
-                        {$definition->modelClass()} \${$parameter}
-                    ) {
-                        {$return}
-                    }
-                PHP;
+            public function show(
+                {$definition->modelClass()} \${$parameter}
+            ) {
+                {$return}
+            }
+        PHP;
     }
 
-    protected function updateMethod(
-        MenuDefinition $definition
-    ): string {
-        $parameter =
-            $definition->parameterName();
+    protected function updateMethod(MenuDefinition $definition): string
+    {
+        $parameter = $definition->parameterName();
 
         if (!$definition->model) {
             return <<<PHP
-    public function update(
-        {$definition->requestClass()} \$request,
-        \${$parameter}
-    ) {
-        return response()->json([
-            'message' => 'Update not implemented',
-        ], 501);
-    }
-PHP;
+                public function update(
+                    {$definition->requestClass()} \$request,
+                    \${$parameter}
+                ) {
+                    return response()->json([
+                        'message' => 'Update not implemented',
+                    ], 501);
+                }
+            PHP;
         }
 
-        $return =
-            $definition->hasResource()
-            ? 'return new '
-            . $definition->resourceClass
-            . "(\${$parameter});"
+        $return = $definition->hasResource()
+            ? "return new {$definition->resourceClass}(\${$parameter});"
             : "return \${$parameter};";
 
         return <<<PHP
-    public function update(
-        {$definition->requestClass()} \$request,
-        {$definition->modelClass()} \${$parameter}
-    ) {
-        \${$parameter}->update(
-            \$request->validated()
-        );
+            public function update(
+                {$definition->requestClass()} \$request,
+                {$definition->modelClass()} \${$parameter}
+            ) {
+                \${$parameter}->update(
+                    \$request->validated()
+                );
 
-        {$return}
-    }
-PHP;
+                {$return}
+            }
+        PHP;
     }
 
-    protected function destroyMethod(
-        MenuDefinition $definition
-    ): string {
-        $parameter =
-            $definition->parameterName();
+    protected function destroyMethod(MenuDefinition $definition): string
+    {
+        $parameter = $definition->parameterName();
 
         if (!$definition->model) {
             return <<<PHP
-    public function destroy(
-        \${$parameter}
-    ) {
-        return response()->json([
-            'message' => 'Destroy not implemented',
-        ], 501);
-    }
-PHP;
+                public function destroy(
+                    \${$parameter}
+                ) {
+                    return response()->json([
+                        'message' => 'Destroy not implemented',
+                    ], 501);
+                }
+            PHP;
         }
 
         return <<<PHP
-    public function destroy(
-        {$definition->modelClass()} \${$parameter}
-    ) {
-        \${$parameter}->delete();
+            public function destroy(
+                {$definition->modelClass()} \${$parameter}
+            ) {
+                \${$parameter}->delete();
 
-        return response()->noContent();
-    }
-PHP;
+                return response()->noContent();
+            }
+        PHP;
     }
 }

@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Bitsnio\AsasFlow\Foundation\Support;
 
 use Illuminate\Support\Str;
@@ -186,7 +188,7 @@ class MenuDefinition
 
     /*
     |--------------------------------------------------------------------------
-    | Model / Request
+    | Model / Request / Schema
     |--------------------------------------------------------------------------
     */
 
@@ -201,6 +203,18 @@ class MenuDefinition
 
         return $this->config['model_name']
             ?? Str::studly($this->name);
+    }
+
+    public function schemaName(): string
+    {
+        return $this->schemaName ?? $this->modelClass();
+    }
+
+    public function tableName(): string
+    {
+        return $this->config['model']['table']
+            ?? $this->config['table']
+            ?? Str::snake(Str::plural($this->modelClass()));
     }
 
     public function requestClass(): string

@@ -200,12 +200,13 @@ class SchemaDefinition
 
             $isRequired = in_array((string) $name, $required, true);
 
-            $fieldRules = $this->rulesForProperty(
-                $property,
-                $isRequired,
-                $path,
-                $ancestors
-            );
+            $fieldRules = $this->rulesForProperty($property, $isRequired, $path);
+            // $fieldRules = $this->rulesForProperty(
+            //     $property,
+            //     $isRequired,
+            //     $path,
+            //     $ancestors
+            // );
 
             $rules[$field] = $fieldRules;
 
@@ -224,12 +225,14 @@ class SchemaDefinition
                 $items = $property['items'];
                 $itemPath = $field . '.*';
 
-                $rules[$itemPath] = $this->rulesForProperty(
-                    $items,
-                    true,
-                    $field,
-                    [...$ancestors, $field]
-                );
+                // $rules[$itemPath] = $this->rulesForProperty(
+                //     $items,
+                //     true,
+                //     $field,
+                //     [...$ancestors, $field]
+                // );
+
+                $rules[$itemPath] = $this->rulesForProperty($items, true, $field);
 
                 if ($this->primaryType($items) === 'object') {
                     $this->buildObjectRules(
@@ -245,7 +248,6 @@ class SchemaDefinition
 
 
     protected function rulesForProperty(
-        string $path,
         array $property,
         bool $required = false,
         ?string $parentPath = null

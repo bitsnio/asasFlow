@@ -1,147 +1,136 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Bitsnio\AsasFlow\Generators\Model;
 
+use Bitsnio\AsasFlow\Foundation\Contracts\SchemaArtifactGeneratorInterface;
 use Bitsnio\AsasFlow\Foundation\Support\FileHandler;
 use Bitsnio\AsasFlow\Foundation\Support\GeneratedBlock;
+use Bitsnio\AsasFlow\Foundation\Support\GeneratorSupport;
 use Bitsnio\AsasFlow\Foundation\Support\MenuDefinition;
 use Bitsnio\AsasFlow\Foundation\Support\SchemaDefinition;
+use Bitsnio\AsasFlow\Foundation\Support\StubRenderer;
 
-class ModelGenerator
+class ModelGenerator implements SchemaArtifactGeneratorInterface
 {
     public function __construct(
         protected FileHandler $files,
+        protected GeneratorSupport $support,
+        protected StubRenderer $stubs,
     ) {}
 
-    public function generate(
+    public function key(): string
+    {
+        return 'models';
+    }
+
+    public function syncFromSchema(
         $module,
         MenuDefinition $definition,
-        SchemaDefinition $schema
+        SchemaDefinition $schema,
+        array $options = [],
     ): array {
-        $path =
-            $this->files->getModelPath(
-                $module,
-                $definition->modelClass()
-            );
-
-        if (!$this->files->exists($path)) {
-            $this->files->writeFile(
-                $path,
-                $this->content(
-                    $module,
-                    $definition,
-                    $schema
-                ),
-                true
-            );
-
-            return [
-                'action' => 'created',
-                'path' => $path,
-            ];
-        }
-
-        $document =
-            $this->files->read($path);
-
-        if (!GeneratedBlock::has(
-            $document,
-            'generated-fillable'
-        )) {
-            return [
-                'action' => 'skipped-no-marker',
-                'path' => $path,
-            ];
-        }
-
-        $this->files->updateGeneratedBlock(
-            $path,
-            'generated-fillable',
-            $this->buildFillable($schema)
+        $path = $this->files->getModelPath(
+            $module,
+            $definition->modelClass(),
         );
 
-        $this->files->updateGeneratedBlock(
+        $exists = $this->files->exists($path);
+        $force = (bool) ($options['force'] ?? false);
+
+        if ($exists && !$force) {
+            $document = $this->files->read($path);
+
+            if (
+                !GeneratedBlock::has($document, 'generated-fillable')
+                || !GeneratedBlock::has($document, 'generated-casts')
+            ) {
+                return [
+                    'action' => 'skipped-no-marker',
+                    'path' => $path,
+                ];
+            }
+
+            $this->files->updateGeneratedBlock(
+                $path,
+                'generated-fillable',
+                $this->buildFillable($schema),
+            );
+
+            $this->files->updateGeneratedBlock(
+                $path,
+                'generated-casts',
+                $this->buildCasts($schema),
+            );
+
+            return [
+                'action' => 'updated',
+                'path' => $path,
+            ];
+        }
+
+        $this->files->writeFile(
             $path,
-            'generated-casts',
-            $this->buildCasts($schema)
+            $this->generatedContent($module, $definition, $schema),
+            true,
         );
 
         return [
-            'action' => 'updated',
+            'action' => $exists ? 'regenerated' : 'created',
             'path' => $path,
         ];
     }
 
-    protected function content(
+    protected function generatedContent(
         $module,
         MenuDefinition $definition,
-        SchemaDefinition $schema
+        SchemaDefinition $schema,
     ): string {
-        $namespace = "Modules\\{$module->getName()}\\Models";
+        $content = $this->stubs->renderFile(
+            'model.stub',
+            [
+                'NAMESPACE' => $this->support->modelNamespace($module),
+                'CLASS' => $definition->modelClass(),
+            ],
+        );
 
-        return <<<PHP
-                <?php
+        $content = GeneratedBlock::replace(
+            $content,
+            'generated-fillable',
+            $this->buildFillable($schema),
+        );
 
-                namespace {$namespace};
-
-                use Illuminate\Database\Eloquent\Model;
-                use Illuminate\Database\Eloquent\SoftDeletes;
-
-                class {$definition->modelClass()} extends Model
-                {
-                    use SoftDeletes;
-
-                    protected \$fillable = [
-                        // @asasflow:generated-fillable:start
-                        // @asasflow:generated-fillable:end
-                    ];
-
-                    protected \$casts = [
-                        // @asasflow:generated-casts:start
-                        // @asasflow:generated-casts:end
-                    ];
-                }
-
-            PHP;
+        return GeneratedBlock::replace(
+            $content,
+            'generated-casts',
+            $this->buildCasts($schema),
+        );
     }
 
-    protected function buildFillable(
-        SchemaDefinition $schema
-    ): string {
+    protected function buildFillable(SchemaDefinition $schema): string
+    {
         $lines = [];
 
         foreach (array_keys($schema->properties()) as $field) {
-            $lines[] = '        '. var_export( $field, true ). ',';
+            $lines[] = '        ' . var_export($field, true) . ',';
         }
 
-        return implode( PHP_EOL, $lines);
+        return implode(PHP_EOL, $lines);
     }
 
-    protected function buildCasts(
-        SchemaDefinition $schema
-    ): string {
-        $casts = $schema->casts();
-
+    protected function buildCasts(SchemaDefinition $schema): string
+    {
         $lines = [];
 
-        foreach ($casts as $field => $cast) {
-            $lines[] =
-                '        '
-                . var_export(
-                    $field,
-                    true
-                )
+        foreach ($schema->casts() as $field => $cast) {
+            $lines[] = '        '
+                . var_export($field, true)
                 . ' => '
-                . var_export(
-                    $cast,
-                    true
-                )
+                . var_export($cast, true)
                 . ',';
         }
 
-        return implode(
-            PHP_EOL,
-            $lines
-        );
+        return implode(PHP_EOL, $lines);
     }
 }

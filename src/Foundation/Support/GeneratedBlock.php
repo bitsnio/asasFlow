@@ -20,32 +20,32 @@ class GeneratedBlock
             . $indent . '// @asasflow:' . $name . ':end';
     }
 
-    public static function replace(
-        string $document,
-        string $name,
-        string $content
-    ): string {
-        $pattern = self::pattern($name);
+    // public static function replace(
+    //     string $document,
+    //     string $name,
+    //     string $content
+    // ): string {
+    //     $pattern = self::pattern($name);
 
-        $updated = preg_replace_callback(
-            $pattern,
-            static function (array $matches) use ($content): string {
-                return $matches[1]
-                    . $content
-                    . $matches[3];
-            },
-            $document,
-            1
-        );
+    //     $updated = preg_replace_callback(
+    //         $pattern,
+    //         static function (array $matches) use ($content): string {
+    //             return $matches[1]
+    //                 . $content
+    //                 . $matches[3];
+    //         },
+    //         $document,
+    //         1
+    //     );
 
-        if ($updated === null) {
-            throw new RuntimeException(
-                "Unable to update generated block [{$name}]."
-            );
-        }
+    //     if ($updated === null) {
+    //         throw new RuntimeException(
+    //             "Unable to update generated block [{$name}]."
+    //         );
+    //     }
 
-        return $updated;
-    }
+    //     return $updated;
+    // }
 
     public static function has(
         string $document,
@@ -68,5 +68,37 @@ class GeneratedBlock
             . '(^[ \t]*\/\/ @asasflow:'
             . $marker
             . ':end[^\r\n]*$)/ms';
+    }
+
+     public static function replace(
+        string $content,
+        string $marker,
+        string $replacement,
+    ): string {
+        $start = "// @asasflow:{$marker}:start";
+        $end = "// @asasflow:{$marker}:end";
+
+        $pattern = '/' . preg_quote($start, '/') .
+            '.*?' . preg_quote($end, '/') . '/s';
+
+        $replacementBlock = $start . PHP_EOL
+            . $replacement . PHP_EOL
+            . '        ' . $end;
+
+        $result = preg_replace(
+            $pattern,
+            $replacementBlock,
+            $content,
+            1,
+            $count,
+        );
+
+        if ($result === null || $count !== 1) {
+            throw new \RuntimeException(
+                "Could not replace generated block: {$marker}"
+            );
+        }
+
+        return $result;
     }
 }

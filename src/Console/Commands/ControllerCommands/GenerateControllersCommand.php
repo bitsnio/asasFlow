@@ -1,7 +1,11 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Bitsnio\AsasFlow\Console\Commands\ControllerCommands;
 
+use Bitsnio\AsasFlow\Foundation\Contracts\GeneratorInterface;
+use Bitsnio\AsasFlow\Foundation\Contracts\ModuleRepositoryInterface;
 use Bitsnio\AsasFlow\Foundation\Support\FileHandler;
 use Bitsnio\AsasFlow\Generators\Controller\ControllerGenerator;
 use Bitsnio\AsasFlow\Generators\Menu\MenuBuilder;
@@ -9,485 +13,216 @@ use Bitsnio\AsasFlow\Generators\Request\RequestGenerator;
 use Bitsnio\AsasFlow\Generators\Resource\ResourceGenerator;
 use Bitsnio\AsasFlow\Generators\Route\RouteGenerator;
 use Bitsnio\AsasFlow\Generators\Schema\SchemaGenerator;
-use Bitsnio\AsasFlow\Foundation\Contracts\ModuleRepositoryInterface;
 use Illuminate\Console\Command;
+use InvalidArgumentException;
 use Throwable;
 
 class GenerateControllersCommand extends Command
 {
-    protected $signature =
-        'asasflow:generate-controllers
+    protected $signature = 'asasflow:generate-controllers
         {module : The module name}
+        {--only=all : Artifact to generate: all, controllers, requests, resources, schemas, routes}
         {--force : Force regeneration}
         {--routes-only : Only generate routes}
         {--controllers-only : Only generate controllers}
         {--requests-only : Only generate requests}
         {--resources-only : Only generate resources}
         {--schemas-only : Only generate schemas}
-        {--dry-run : Preview generated files}
         {--trace : Show route hierarchy}';
 
-    protected $description =
-        'Generate controllers, requests, resources, schemas and API routes recursively from module menu configuration.';
+    protected $description = 'Generate controllers, requests, resources, schemas and API routes recursively from module menu configuration.';
+
+    /**
+     * @var array<string, GeneratorInterface>
+     */
+    protected array $generators = [];
 
     public function __construct(
-        protected ControllerGenerator $controllerGenerator,
-        protected RequestGenerator $requestGenerator,
-        protected ResourceGenerator $resourceGenerator,
-        protected SchemaGenerator $schemaGenerator,
-        protected RouteGenerator $routeGenerator,
+        ControllerGenerator $controllerGenerator,
+        RequestGenerator $requestGenerator,
+        ResourceGenerator $resourceGenerator,
+        SchemaGenerator $schemaGenerator,
+        RouteGenerator $routeGenerator,
         protected MenuBuilder $definitionBuilder,
         protected FileHandler $files,
         protected ModuleRepositoryInterface $moduleRepository,
     ) {
         parent::__construct();
+
+        $this->registerGenerators([
+            $controllerGenerator,
+            $requestGenerator,
+            $resourceGenerator,
+            $schemaGenerator,
+            $routeGenerator,
+        ]);
+    }
+
+    /**
+     * @param array<GeneratorInterface> $generators
+     */
+    protected function registerGenerators(array $generators): void
+    {
+        foreach ($generators as $generator) {
+            $this->generators[$generator->key()] = $generator;
+        }
     }
 
     public function handle(): int
     {
         try {
-            $moduleName =
-                $this->argument('module');
-
-            $module =
-                $this->moduleRepository
-                    ->find($moduleName);
+            $moduleName = (string) $this->argument('module');
+            $module = $this->moduleRepository->find($moduleName);
 
             if (!$module) {
-                $this->error(
-                    "Module [{$moduleName}] does not exist!"
-                );
+                $this->error("Module [{$moduleName}] does not exist!");
 
                 return self::FAILURE;
             }
 
-            $menuPath =
-                $this->files->getMenuPath(
-                    $module
-                );
+            $menuPath = $this->files->getMenuPath($module);
 
             if (!$this->files->exists($menuPath)) {
-                $this->error(
-                    "Menu configuration not found at: {$menuPath}"
-                );
+                $this->error("Menu configuration not found at: {$menuPath}");
 
                 return self::FAILURE;
             }
 
-            $menu =
-                require $menuPath;
-
-            $definitions =
-                $this->definitionBuilder
-                    ->build($menu);
-
-            $options =
-                $this->getOptions();
+            $menu = require $menuPath;
+            $definitions = $this->definitionBuilder->build($menu);
 
             if ($this->option('trace')) {
-                $this->displayTrace(
-                    $definitions
-                );
+                $this->displayTrace($definitions);
             }
 
-            if ($this->option('dry-run')) {
-                $this->displayPreview(
-                    $module,
-                    $definitions,
-                    $options
-                );
+            $only = $this->resolveOnlyTarget();
+            $options = [
+                'force' => (bool) $this->option('force'),
+            ];
 
-                return self::SUCCESS;
-            }
-
-            $results =
-                $this->generate(
-                    $module,
-                    $definitions,
-                    $options
-                );
-
-            $this->displayResults(
-                $results
+            $results = $this->generate(
+                $module,
+                $definitions,
+                $only,
+                $options,
             );
+
+            $this->displayResults($results);
 
             return self::SUCCESS;
         } catch (Throwable $e) {
-            $this->error(
-                'Generation failed: '
-                . $e->getMessage()
-            );
+            $this->error('Generation failed: ' . $e->getMessage());
 
-            if (
-                $this->getOutput()
-                    ->isVerbose()
-            ) {
-                $this->line(
-                    $e->getTraceAsString()
-                );
+            if ($this->getOutput()->isVerbose()) {
+                $this->line($e->getTraceAsString());
             }
 
             return self::FAILURE;
         }
     }
 
-    protected function getOptions(): array
+    protected function resolveOnlyTarget(): string
     {
-        return [
-            'force' =>
-                (bool) $this->option('force'),
+        $legacyFlags = array_keys(array_filter([
+            'routes' => (bool) $this->option('routes-only'),
+            'controllers' => (bool) $this->option('controllers-only'),
+            'requests' => (bool) $this->option('requests-only'),
+            'resources' => (bool) $this->option('resources-only'),
+            'schemas' => (bool) $this->option('schemas-only'),
+        ]));
 
-            'routesOnly' =>
-                (bool) $this->option(
-                    'routes-only'
-                ),
+        if (count($legacyFlags) > 1) {
+            throw new InvalidArgumentException(
+                'Only one generation-only option may be used.',
+            );
+        }
 
-            'controllersOnly' =>
-                (bool) $this->option(
-                    'controllers-only'
-                ),
+        if (count($legacyFlags) === 1) {
+            return $legacyFlags[0];
+        }
 
-            'requestsOnly' =>
-                (bool) $this->option(
-                    'requests-only'
-                ),
+        $only = strtolower(trim((string) $this->option('only')));
+        if ($only === '') {
+            $only = 'all';
+        }
 
-            'resourcesOnly' =>
-                (bool) $this->option(
-                    'resources-only'
-                ),
+        $allowed = ['all', ...array_keys($this->generators)];
 
-            'schemasOnly' =>
-                (bool) $this->option(
-                    'schemas-only'
-                ),
-        ];
+        if (!in_array($only, $allowed, true)) {
+            throw new InvalidArgumentException(
+                'Invalid --only value. Allowed values: ' . implode(', ', $allowed),
+            );
+        }
+
+        return $only;
     }
 
     protected function generate(
         $module,
         array $definitions,
-        array $options
+        string $only,
+        array $options,
     ): array {
-        $results = [
-            'controllers' => [],
-            'requests' => [],
-            'resources' => [],
-            'schemas' => [],
-            'routes' => [],
-        ];
+        $activeGenerators = $only === 'all'
+            ? $this->generators
+            : [$only => $this->generators[$only]];
 
-        $only = array_filter([
-            'routes' =>
-                $options['routesOnly'],
+        $results = [];
 
-            'controllers' =>
-                $options['controllersOnly'],
-
-            'requests' =>
-                $options['requestsOnly'],
-
-            'resources' =>
-                $options['resourcesOnly'],
-
-            'schemas' =>
-                $options['schemasOnly'],
-        ]);
-
-        if (count($only) > 1) {
-            throw new \InvalidArgumentException(
-                'Only one generation-only option may be used.'
+        foreach ($activeGenerators as $key => $generator) {
+            $results[$key] = $generator->generate(
+                $module,
+                $definitions,
+                $options,
             );
-        }
-
-        if (
-            !$only ||
-            isset($only['controllers'])
-        ) {
-            $results['controllers'] =
-                $this->controllerGenerator
-                    ->generate(
-                        $module,
-                        $definitions,
-                        $options
-                    );
-        }
-
-        if (
-            !$only ||
-            isset($only['requests'])
-        ) {
-            $results['requests'] =
-                $this->requestGenerator
-                    ->generate(
-                        $module,
-                        $definitions,
-                        $options
-                    );
-        }
-
-        if (
-            !$only ||
-            isset($only['resources'])
-        ) {
-            $results['resources'] =
-                $this->resourceGenerator
-                    ->generate(
-                        $module,
-                        $definitions,
-                        $options
-                    );
-        }
-
-        if (
-            !$only ||
-            isset($only['schemas'])
-        ) {
-            $results['schemas'] =
-                $this->schemaGenerator
-                    ->generate(
-                        $module,
-                        $definitions,
-                        $options
-                    );
-        }
-
-        if (
-            !$only ||
-            isset($only['routes'])
-        ) {
-            $results['routes'] =
-                $this->routeGenerator
-                    ->generate(
-                        $module,
-                        $definitions,
-                        $options
-                    );
         }
 
         return $results;
     }
 
-    protected function displayPreview(
-        $module,
-        array $definitions,
-        array $options
-    ): void {
-        $this->info(
-            "Dry run - Module: {$module->getName()}"
-        );
+    protected function displayTrace(array $definitions): void
+    {
+        $this->info('Route hierarchy:');
 
-        $changes = [];
-
-        $only = array_filter([
-            'routes' =>
-                $options['routesOnly'],
-
-            'controllers' =>
-                $options['controllersOnly'],
-
-            'requests' =>
-                $options['requestsOnly'],
-
-            'resources' =>
-                $options['resourcesOnly'],
-
-            'schemas' =>
-                $options['schemasOnly'],
-        ]);
-
-        if (
-            !$only ||
-            isset($only['controllers'])
-        ) {
-            $changes = [
-                ...$changes,
-                ...$this->controllerGenerator
-                    ->preview(
-                        $module,
-                        $definitions,
-                        $options
-                    ),
-            ];
-        }
-
-        if (
-            !$only ||
-            isset($only['requests'])
-        ) {
-            $changes = [
-                ...$changes,
-                ...$this->requestGenerator
-                    ->preview(
-                        $module,
-                        $definitions,
-                        $options
-                    ),
-            ];
-        }
-
-        if (
-            !$only ||
-            isset($only['resources'])
-        ) {
-            $changes = [
-                ...$changes,
-                ...$this->resourceGenerator
-                    ->preview(
-                        $module,
-                        $definitions,
-                        $options
-                    ),
-            ];
-        }
-
-        if (
-            !$only ||
-            isset($only['schemas'])
-        ) {
-            $changes = [
-                ...$changes,
-                ...$this->schemaGenerator
-                    ->preview(
-                        $module,
-                        $definitions,
-                        $options
-                    ),
-            ];
-        }
-
-        if (
-            !$only ||
-            isset($only['routes'])
-        ) {
-            $changes = [
-                ...$changes,
-                ...$this->routeGenerator
-                    ->preview(
-                        $module,
-                        $definitions,
-                        $options
-                    ),
-            ];
-        }
-
-        foreach ($changes as $change) {
-            $this->line(
-                sprintf(
-                    '  %s %s: %s',
-                    strtoupper(
-                        $change['action']
-                        ?? 'CREATE'
-                    ),
-                    $change['type']
-                        ?? 'file',
-                    $change['file']
-                        ?? ''
-                )
-            );
-        }
-
-        $this->info(
-            'Total: '
-            . count($changes)
-            . ' file(s).'
-        );
+        $this->traceNodes($definitions, 0);
     }
 
-    protected function displayTrace(
-        array $definitions
-    ): void {
-        $this->info(
-            'Route hierarchy:'
-        );
-
-        $this->traceNodes(
-            $definitions,
-            0
-        );
-    }
-
-    protected function traceNodes(
-        array $definitions,
-        int $level
-    ): void {
+    protected function traceNodes(array $definitions, int $level): void
+    {
         foreach ($definitions as $definition) {
-            $this->line(
-                str_repeat(
-                    '  ',
-                    $level
-                )
-                . '- '
-                . $definition->routePath()
-            );
+            $this->line(str_repeat('  ', $level) . '- ' . $definition->routePath());
 
-            $this->traceNodes(
-                $definition->children,
-                $level + 1
-            );
+            $this->traceNodes($definition->children, $level + 1);
         }
     }
 
-    protected function displayResults(
-        array $results
-    ): void {
+    protected function displayResults(array $results): void
+    {
         $this->newLine();
+        $this->info('Generation complete.');
 
-        $this->info(
-            'Generation complete.'
-        );
-
-        foreach (
-            [
-                'controllers',
-                'requests',
-                'resources',
-                'schemas',
-            ] as $type
-        ) {
-            if (
-                empty($results[$type])
-            ) {
+        foreach ($results as $type => $items) {
+            if (empty($items)) {
                 continue;
             }
 
-            $this->line(
-                "\n"
-                . ucfirst($type)
-                . ':'
-            );
+            if ($type === 'routes') {
+                foreach ($items as $route) {
+                    $this->line("\nRoutes: {$route['action']} {$route['path']}");
+                }
 
-            foreach (
-                $results[$type]
-                as $result
-            ) {
-                $this->line(
-                    "  {$result['action']}: "
-                    . ($result['name'] ?? '')
-                );
+                continue;
+            }
 
-                if (
-                    $this->getOutput()
-                        ->isVerbose()
-                ) {
-                    $this->line(
-                        "    "
-                        . ($result['full_path']
-                            ?? '')
-                    );
+            $this->line("\n" . ucfirst($type) . ':');
+
+            foreach ($items as $result) {
+                $this->line("  {$result['action']}: " . ($result['name'] ?? ''));
+
+                if ($this->getOutput()->isVerbose() && !empty($result['full_path'])) {
+                    $this->line("    {$result['full_path']}");
                 }
             }
-        }
-
-        foreach (
-            $results['routes']
-            as $route
-        ) {
-            $this->line(
-                "\nRoutes: "
-                . "{$route['action']} "
-                . "{$route['path']}"
-            );
         }
     }
 }

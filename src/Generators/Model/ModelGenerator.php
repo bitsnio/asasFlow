@@ -108,11 +108,37 @@ class ModelGenerator implements SchemaArtifactGeneratorInterface
         );
     }
 
-    protected function buildFillable(SchemaDefinition $schema): string
-    {
+    // Inside ModelGenerator::syncFromSchema() and generatedContent(), pass $definition to buildFillable:
+    // $this->buildFillable($definition, $schema)
+
+    protected function buildFillable(
+        MenuDefinition $definition,
+        SchemaDefinition $schema,
+    ): string {
+        $fields = array_keys($schema->properties());
+        $table = $definition->tableName();
+
+        if (
+            config('asasflow.tenancy.database_strategy', 'single') === 'single'
+            && ($definition->config['tenancy'] ?? true) !== false
+            && !in_array($table, config('asasflow.tenancy.exempt_tables', ['tenants', 'tenant_domains']), true)
+        ) {
+            $tenantCol = (string) config('asasflow.tenancy.tenant_column', 'tenant_id');
+            $prepend = [$tenantCol];
+
+            $siteEnabled = (bool) config('asasflow.tenancy.site_enabled', true);
+            $siteExempt = config('asasflow.tenancy.site_exempt_tables', ['sites']);
+
+            if ($siteEnabled && !in_array($table, $siteExempt, true) && ($definition->config['site'] ?? true) !== false) {
+                $prepend[] = (string) config('asasflow.tenancy.site_column', 'site_id');
+            }
+
+            $fields = array_values(array_unique([...$prepend, ...$fields]));
+        }
+
         $lines = [];
 
-        foreach (array_keys($schema->properties()) as $field) {
+        foreach ($fields as $field) {
             $lines[] = '        ' . var_export($field, true) . ',';
         }
 

@@ -1,60 +1,66 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Bitsnio\AsasFlow\Features\Tenancy\Services;
 
 use Bitsnio\AsasFlow\Features\Tenancy\Models\Tenant;
+use Bitsnio\AsasFlow\Features\Tenancy\Models\TenantDomain;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
+use RuntimeException;
 
 class TenantContext
 {
-    protected static ?Tenant $currentTenant = null;
+    protected static ?Model $currentTenant = null;
+    protected static int|string|null $currentSiteId = null;
     protected static bool $initialized = false;
     protected static ?string $originalPrefix = null;
 
     /**
-     * Initialize tenant from request.
+     * Initialize tenant (and optional site) from request.
      */
-    public static function initialize(?string $identifier = null): ?Tenant
+    public static function initialize(?string $identifier = null): ?Model
     {
         if (self::$initialized && !$identifier) {
             return self::$currentTenant;
         }
 
         $tenant = self::resolveTenant($identifier);
-        
+
         if ($tenant) {
             self::setTenant($tenant);
+            self::resolveAndSetSite();
         }
 
         self::$initialized = true;
+
         return $tenant;
     }
 
     /**
      * Resolve tenant from various sources.
      */
-    public static function resolveTenant(?string $identifier = null): ?Tenant
+    public static function resolveTenant(?string $identifier = null): ?Model
     {
-        // 1. Explicit identifier
         if ($identifier) {
             return self::findTenant($identifier);
         }
 
-        // 2. X-Tenant-ID header
         if ($header = request()->header('X-Tenant-ID')) {
             return self::findTenant($header);
         }
 
-        // 3. X-Tenant-Slug header
         if ($slug = request()->header('X-Tenant-Slug')) {
             return self::findTenant($slug);
         }
 
-        // 4. Domain-based resolution
         $domain = request()->getHost();
-        return Cache::remember("asasflow:tenant:domain:{$domain}", 3600, function () use ($domain) {
+        $ttl = (int) config('asasflow.tenancy.cache_resolution_ttl', 3600);
+
+        return Cache::remember("asasflow:tenant:domain:{$domain}", $ttl, function () use ($domain) {
             $domainRecord = TenantDomain::where('domain', $domain)
                 ->where('is_verified', true)
                 ->with('tenant')
@@ -65,14 +71,39 @@ class TenantContext
     }
 
     /**
-     * Find tenant by ID or slug.
+     * Resolve site ID from request header or authenticated user.
      */
-    public static function findTenant(string $identifier): ?Tenant
+    public static function resolveAndSetSite(): void
     {
-        return Cache::remember("asasflow:tenant:id:{$identifier}", 3600, function () use ($identifier) {
-            return Tenant::where('slug', $identifier)
-                ->orWhere('id', $identifier)
+        if (!config('asasflow.tenancy.site_enabled', true)) {
+            return;
+        }
+
+        $siteId = request()->header('X-Site-ID')
+            ?? request()->input('site_id')
+            ?? auth()->user()?->site_id
+            ?? null;
+
+        if ($siteId !== null && $siteId !== '') {
+            self::setSiteId($siteId);
+        }
+    }
+
+    /**
+     * Find tenant by ID or slug using configured tenant model.
+     */
+    public static function findTenant(string $identifier): ?Model
+    {
+        $modelClass = config('asasflow.tenancy.tenant_model', Tenant::class);
+        $ttl = (int) config('asasflow.tenancy.cache_resolution_ttl', 3600);
+
+        return Cache::remember("asasflow:tenant:id:{$identifier}", $ttl, function () use ($modelClass, $identifier) {
+            return $modelClass::query()
                 ->where('is_active', true)
+                ->where(function ($query) use ($identifier) {
+                    $query->where('slug', $identifier)
+                        ->orWhere('id', $identifier);
+                })
                 ->first();
         });
     }
@@ -80,118 +111,112 @@ class TenantContext
     /**
      * Set current tenant.
      */
-    public static function setTenant(Tenant $tenant): void
+    public static function setTenant(Model $tenant): void
     {
         self::$currentTenant = $tenant;
 
-        // Store original cache prefix
         if (self::$originalPrefix === null) {
-            self::$originalPrefix = config('cache.prefix');
+            self::$originalPrefix = (string) config('cache.prefix');
         }
 
-        // Set tenant-scoped cache prefix
-        Config::set('cache.prefix', "t{$tenant->id}_" . self::$originalPrefix);
+        Config::set('cache.prefix', "t{$tenant->getKey()}_" . self::$originalPrefix);
 
-        // Switch database if using separate strategy
         if (config('asasflow.tenancy.database_strategy') === 'separate') {
             self::switchDatabase($tenant);
         }
 
-        // Bind to container
         app()->instance('current.tenant', $tenant);
-        app()->instance(Tenant::class, $tenant);
+        app()->instance($tenant::class, $tenant);
     }
 
-    /**
-     * Get current tenant.
-     */
-    public static function getCurrentTenant(): ?Tenant
+    public static function setSiteId(int|string|null $siteId): void
     {
-        return self::$currentTenant ?? app('current.tenant', null);
+        self::$currentSiteId = $siteId;
     }
 
-    /**
-     * Get tenant ID.
-     */
-    public static function getTenantId(): ?string
+    public static function getCurrentTenant(): ?Model
     {
-        return self::getCurrentTenant()?->id;
+        return self::$currentTenant ?? (app()->bound('current.tenant') ? app('current.tenant') : null);
     }
 
-    /**
-     * Get tenant slug.
-     */
+    public static function getTenantId(): int|string|null
+    {
+        return self::getCurrentTenant()?->getKey();
+    }
+
+    public static function getSiteId(): int|string|null
+    {
+        return self::$currentSiteId;
+    }
+
     public static function getTenantSlug(): ?string
     {
-        return self::getCurrentTenant()?->slug;
+        return self::getCurrentTenant()?->getAttribute('slug');
     }
 
-    /**
-     * Check if tenant is initialized.
-     */
     public static function isTenantInitialized(): bool
     {
         return self::$currentTenant !== null;
     }
 
-    /**
-     * Reset tenant context.
-     */
     public static function reset(): void
     {
         self::$currentTenant = null;
+        self::$currentSiteId = null;
         self::$initialized = false;
-        
+
         if (self::$originalPrefix !== null) {
             Config::set('cache.prefix', self::$originalPrefix);
         }
 
-        // Reset database connection
         if (config('asasflow.tenancy.database_strategy') === 'separate') {
             Config::set('database.default', config('asasflow.tenancy.central_connection', 'mysql'));
             DB::purge('tenant');
         }
     }
 
-    /**
-     * Execute callback within tenant context.
-     */
-    public static function runForTenant(Tenant|string $tenant, callable $callback): mixed
+    public static function runForTenant(Model|string $tenant, callable $callback, int|string|null $siteId = null): mixed
     {
         $previousTenant = self::$currentTenant;
-        
-        if (is_string($tenant)) {
-            $tenant = self::findTenant($tenant);
-        }
+        $previousSiteId = self::$currentSiteId;
 
-        if (!$tenant) {
-            throw new \RuntimeException("Tenant not found: {$tenant}");
+        if (is_string($tenant)) {
+            $resolved = self::findTenant($tenant);
+            if (!$resolved) {
+                throw new RuntimeException("Tenant not found: {$tenant}");
+            }
+            $tenant = $resolved;
         }
 
         try {
             self::setTenant($tenant);
+            if ($siteId !== null) {
+                self::setSiteId($siteId);
+            }
+
             return $callback();
         } finally {
             if ($previousTenant) {
                 self::setTenant($previousTenant);
+                self::setSiteId($previousSiteId);
             } else {
                 self::reset();
             }
         }
     }
 
-    /**
-     * Switch database connection for tenant.
-     */
-    protected static function switchDatabase(Tenant $tenant): void
+    protected static function switchDatabase(Model $tenant): void
     {
         $connection = config('asasflow.tenancy.tenant_connection', 'tenant');
-        
-        Config::set("database.connections.{$connection}.database", $tenant->getDatabaseName());
-        
+        $dbName = method_exists($tenant, 'getDatabaseName')
+            ? $tenant->getDatabaseName()
+            : ($tenant->getAttribute('database') ?? "tenant_{$tenant->getAttribute('slug')}");
+
+        Config::set("database.connections.{$connection}.database", $dbName);
+
         DB::purge($connection);
         DB::reconnect($connection);
-        
+
         Config::set('database.default', $connection);
     }
 }

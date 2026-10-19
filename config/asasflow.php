@@ -461,12 +461,40 @@ return [
     | ASASFLOW Tenancy Configuration
     |--------------------------------------------------------------------------
     */
+    /*
+    |--------------------------------------------------------------------------
+    | ASASFLOW Tenancy Configuration
+    |--------------------------------------------------------------------------
+    */
     'tenancy' => [
         // Enable multi-tenancy
         'enabled' => env('ASASFLOW_TENANCY_ENABLED', false),
 
-        // Database strategy: 'single' (tenant_id column) or 'separate' (per-tenant DB)
+        // Database strategy: 'single' (tenant_id/site_id columns) or 'separate' (per-tenant DB)
         'database_strategy' => env('ASASFLOW_TENANCY_DB_STRATEGY', 'single'),
+
+        // Multi-site support within a tenant
+        'site_enabled' => env('ASASFLOW_TENANCY_SITE_ENABLED', true),
+
+        // Column names injected into single-DB migrations & scopes
+        'tenant_column' => 'tenant_id',
+        'site_column' => 'site_id',
+        'site_nullable' => true,
+
+        // Tables that belong to the central landlord and NEVER get tenant_id or site_id
+        'exempt_tables' => [
+            'tenants',
+            'tenant_domains',
+            'migrations',
+            'jobs',
+            'failed_jobs',
+            'personal_access_tokens',
+        ],
+
+        // Tables that get tenant_id, but NEVER get site_id
+        'site_exempt_tables' => [
+            'sites',
+        ],
 
         // Central domains (landlord access)
         'central_domains' => explode(',', env('ASASFLOW_CENTRAL_DOMAINS', 'localhost,127.0.0.1')),
@@ -480,14 +508,14 @@ return [
             'asasflow/*',
         ],
 
-        // Tenant model class
+        // Tenant model class (Point this to Modules\Core\Models\Tenants::class if using Core module)
         'tenant_model' => \Bitsnio\AsasFlow\Features\Tenancy\Models\Tenant::class,
 
         // Connection name for tenant databases (when using separate strategy)
         'tenant_connection' => 'tenant',
 
         // Central connection name
-        'central_connection' => config('database.default', 'mysql'),
+        'central_connection' => env('DB_CONNECTION', 'mysql'),
 
         // Auto-create tenant database on tenant creation
         'auto_create_db' => true,

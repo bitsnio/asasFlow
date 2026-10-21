@@ -113,6 +113,16 @@ class SchemaArtifactGenerator
                 $schema = SchemaDefinition::fromFile($schemaPath);
 
                 foreach ($activeGenerators as $key => $generator) {
+                    
+                    // ModelGenerator and MigrationGenerator are automatically skipped when disabled in the schema:
+                    if (!$schema->shouldGenerate($key)) {
+                        $results[$key][] = [
+                            'action' => 'skipped (disabled-in-schema)',
+                            'path' => $schemaPath,
+                        ];
+
+                        continue;
+                    }
                     $results[$key][] = $generator->syncFromSchema(
                         $module,
                         $definition,

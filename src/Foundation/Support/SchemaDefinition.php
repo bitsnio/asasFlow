@@ -10,6 +10,7 @@ class SchemaDefinition
     protected array $document;
     protected array $schema;
     protected array $modelDefaults = [];
+    protected array $generatorConfig = [];
 
     public function __construct(array $document)
     {
@@ -24,6 +25,9 @@ class SchemaDefinition
             ? $document['model']
             : [];
 
+        $this->generatorConfig = is_array($document['generator'] ?? null)
+            ? $document['generator']
+            : [];
         $this->schema = $this->expandSchema($this->schema);
     }
 
@@ -625,5 +629,29 @@ class SchemaDefinition
         }
 
         return null;
+    }
+
+    /**
+     * Check if a specific artifact ('models', 'migrations', 'requests', 'resources', 'controllers')
+     * should be generated for this schema. Defaults to true.
+     */
+    public function shouldGenerate(string $artifactKey): bool
+    {
+        $aliases = match ($artifactKey) {
+            'models', 'model' => ['models', 'model'],
+            'migrations', 'migration' => ['migrations', 'migration'],
+            'requests', 'request' => ['requests', 'request'],
+            'resources', 'resource' => ['resources', 'resource'],
+            'controllers', 'controller' => ['controllers', 'controller'],
+            default => [$artifactKey],
+        };
+
+        foreach ($aliases as $key) {
+            if (array_key_exists($key, $this->generatorConfig)) {
+                return (bool) $this->generatorConfig[$key];
+            }
+        }
+
+        return true;
     }
 }

@@ -55,7 +55,7 @@ class ModelGenerator implements SchemaArtifactGeneratorInterface
             $this->files->updateGeneratedBlock(
                 $path,
                 'generated-fillable',
-                $this->buildFillable($schema),
+                $this->buildFillable($definition, $schema),
             );
 
             $this->files->updateGeneratedBlock(
@@ -98,7 +98,7 @@ class ModelGenerator implements SchemaArtifactGeneratorInterface
         $content = GeneratedBlock::replace(
             $content,
             'generated-fillable',
-            $this->buildFillable($schema),
+            $this->buildFillable($definition, $schema),
         );
 
         return GeneratedBlock::replace(

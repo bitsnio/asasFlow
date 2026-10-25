@@ -12,7 +12,7 @@ class DocumentationInstaller
         $version = (string) config('asasflow.docs.default_version', '1.0');
         $base = base_path(config('larecipe.docs.path', 'resources/docs'));
         $hostPath = $base . DIRECTORY_SEPARATOR . $version;
-        $source = dirname(__DIR__, 3) . DIRECTORY_SEPARATOR . 'docs' . DIRECTORY_SEPARATOR . $version;
+        $source = dirname(__DIR__, 4) . DIRECTORY_SEPARATOR . 'docs' . DIRECTORY_SEPARATOR . $version;
 
         if (! File::isDirectory($source)) {
             $command->error("Package docs source not found at: {$source}");

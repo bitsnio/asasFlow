@@ -36,15 +36,14 @@ class Install extends Command
         $this->call('config:clear');
 
         if (! app(DocumentationInstaller::class)->install($this)) return self::FAILURE;
-        if (! app(RequiredModulesInstaller::class)->install($this, app(ModuleReleaseInstaller::class))) {
-            $this->error('One or more required modules could not be installed.');
-            return self::FAILURE;
-        }
+        // if (! app(RequiredModulesInstaller::class)->install($this, app(ModuleReleaseInstaller::class))) {
+        //     $this->error('One or more required modules could not be installed.');
+        //     return self::FAILURE;
+        // }
         if (! app(ComposerAutoloadInstaller::class)->install($this)) return self::FAILURE;
 
         $this->setupJwt();
         $this->call('config:clear');
-
         if ($this->option('migrate')) {
             $this->info('Running database migrations...');
             if ($this->call('migrate') !== self::SUCCESS) {

@@ -145,11 +145,21 @@ class ModelGenerator implements SchemaArtifactGeneratorInterface
         return implode(PHP_EOL, $lines);
     }
 
+
     protected function buildCasts(SchemaDefinition $schema): string
     {
+        $casts = $schema->casts();
+
+        // Laravel-specific convention; does not modify the JSON Schema.
+        foreach ($schema->properties() as $field => $property) {
+            if ($field === 'password') {
+                $casts[$field] = 'hashed';
+            }
+        }
+
         $lines = [];
 
-        foreach ($schema->casts() as $field => $cast) {
+        foreach ($casts as $field => $cast) {
             $lines[] = '        '
                 . var_export($field, true)
                 . ' => '

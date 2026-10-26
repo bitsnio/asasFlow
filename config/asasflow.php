@@ -626,10 +626,10 @@ return [
         'jwt' => [
             'user_model' => env(
                 'ASASFLOW_JWT_USER_MODEL',
-                'Modules\\Core\\Models\\User'
+                'Modules\\Core\\Models\\Users'
             ),
             'guard' => 'api',
-            'provider' => 'asasflow_users',
+            'provider' => 'users',
         ],
     ],
 ];

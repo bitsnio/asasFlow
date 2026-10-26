@@ -9,6 +9,7 @@ use Bitsnio\AsasFlow\Foundation\Support\FileHandler;
 use Bitsnio\AsasFlow\Foundation\Support\MenuDefinition;
 use Bitsnio\AsasFlow\Foundation\Support\SchemaDefinition;
 use Bitsnio\AsasFlow\Foundation\Support\StubRenderer;
+use Bitsnio\AsasFlow\Foundation\Support\GeneratedBlock;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
@@ -72,23 +73,42 @@ class MigrationGenerator implements SchemaArtifactGeneratorInterface
 
         // 2. If the create migration exists, check if it has already been executed in the DB
         if (!$this->isMigrationExecuted($existingCreateFile, $table)) {
-            $class = 'Create' . Str::studly($table) . 'Table';
-            $newContent = $this->buildCreateContent($class, $table, $definition, $schema);
-            $currentContent = $this->files->read($existingCreateFile);
+            $document = $this->files->read($existingCreateFile);
 
-            if ($newContent === $currentContent) {
+            if (!GeneratedBlock::has($document, 'columns')) {
                 return [
-                    'action' => 'skipped (up-to-date)',
+                    'action' => 'skipped-no-marker',
                     'path' => $existingCreateFile,
                 ];
             }
 
-            $this->files->writeFile($existingCreateFile, $newContent, true);
+            $this->files->updateGeneratedBlock(
+                $existingCreateFile,
+                'columns',
+                $this->buildColumns($table, $definition, $schema),
+            );
 
             return [
-                'action' => 'updated-unrun-migration',
+                'action' => 'updated-generated-columns',
                 'path' => $existingCreateFile,
             ];
+            // $class = 'Create' . Str::studly($table) . 'Table';
+            // $newContent = $this->buildCreateContent($class, $table, $definition, $schema);
+            // $currentContent = $this->files->read($existingCreateFile);
+
+            // if ($newContent === $currentContent) {
+            //     return [
+            //         'action' => 'skipped (up-to-date)',
+            //         'path' => $existingCreateFile,
+            //     ];
+            // }
+
+            // $this->files->writeFile($existingCreateFile, $newContent, true);
+
+            // return [
+            //     'action' => 'updated-unrun-migration',
+            //     'path' => $existingCreateFile,
+            // ];
         }
 
         // 3. The create migration HAS already been run!
@@ -231,17 +251,15 @@ class MigrationGenerator implements SchemaArtifactGeneratorInterface
                 $migrationsTable = $migrationsTable['table'] ?? 'migrations';
             }
 
+            // If Laravel's migration history exists, trust the recorded
+            // status of this specific migration.
             if (Schema::hasTable($migrationsTable)) {
-                $recorded = DB::table($migrationsTable)
+                return DB::table($migrationsTable)
                     ->where('migration', $migrationName)
                     ->exists();
-
-                if ($recorded) {
-                    return true;
-                }
             }
 
-            // Fallback: if the table itself already exists in the database, treat create migration as executed
+            // Fallback only when migration history is unavailable.
             return Schema::hasTable($table);
         } catch (Throwable) {
             return false;
@@ -343,23 +361,60 @@ class MigrationGenerator implements SchemaArtifactGeneratorInterface
         MenuDefinition $definition,
         SchemaDefinition $schema,
     ): string {
-        $lines = [];
-
-        foreach ($this->resolveAllColumns($table, $definition, $schema) as $column) {
-            $line = $this->column($column);
-
-            if ($line !== '') {
-                $lines[] = '            ' . $line;
-            }
-        }
 
         return $this->stubs->renderFile(
             'create-migration.stub',
             [
                 'class' => $class,
                 'table' => $table,
-                'columns' => implode(PHP_EOL, $lines),
+                'columns' => $this->buildColumns(
+                    $table,
+                    $definition,
+                    $schema,
+                ),
             ],
+        );
+        // $lines = [];
+
+        // foreach ($this->resolveAllColumns($table, $definition, $schema) as $column) {
+        //     $line = $this->column($column);
+
+        //     if ($line !== '') {
+        //         $lines[] = '            ' . $line;
+        //     }
+        // }
+
+        // return $this->stubs->renderFile(
+        //     'create-migration.stub',
+        //     [
+        //         'class' => $class,
+        //         'table' => $table,
+        //         'columns' => implode(PHP_EOL, $lines),
+        //     ],
+        // );
+    }
+
+    protected function buildColumns(
+        string $table,
+        MenuDefinition $definition,
+        SchemaDefinition $schema,
+    ): string {
+        $lines = [];
+
+        foreach ($this->resolveAllColumns($table, $definition, $schema) as $column) {
+            $line = $this->column($column);
+
+            if ($line !== '') {
+                $lines[] = $line;
+            }
+        }
+
+        return implode(
+            PHP_EOL,
+            array_map(
+                static fn(string $line): string => '            ' . $line,
+                $lines,
+            ),
         );
     }
 
@@ -420,7 +475,9 @@ class MigrationGenerator implements SchemaArtifactGeneratorInterface
             $line .= '->default(' . var_export($column['default'], true) . ')';
         }
 
-        if ($column['index'] ?? false) {
+        if ($column['unique'] ?? false) {
+            $line .= '->unique()';
+        } elseif ($column['index'] ?? false) {
             $line .= '->index()';
         }
 
@@ -449,7 +506,8 @@ class MigrationGenerator implements SchemaArtifactGeneratorInterface
             'date' => "\$table->date({$quotedName})",
             'date-time' => "\$table->dateTime({$quotedName})",
             'uuid' => "\$table->uuid({$quotedName})",
-            default => "\$table->string({$quotedName})",
+            default => "\$table->string({$quotedName}, " .
+                (int) ($column['maxLength'] ?? 255) . ")",
         };
     }
 }

@@ -158,10 +158,10 @@ class JwtSetupService
 
         $model = config(
             'asasflow.install.jwt.user_model',
-            'Modules\\Core\\Models\\User'
+            'Modules\\Core\\Models\\Users'
         );
 
-        $provider = config('asasflow.install.jwt.provider', 'asasflow_users');
+        $provider = config('asasflow.install.jwt.provider', 'users');
         $guard = config('asasflow.install.jwt.guard', 'api');
 
         $content = File::get($path);
@@ -183,7 +183,7 @@ class JwtSetupService
 
             if ($updated === null) {
                 $result['errors'][] =
-                    'Could not safely add the asasflow_users provider. '
+                    "Could not safely add the [{$provider}] provider. "
                     . 'Review config/auth.php manually.';
 
                 return;
@@ -195,7 +195,7 @@ class JwtSetupService
             || ! $this->entryHasModel($providerEntry, $model)
         ) {
             $result['errors'][] =
-                'The existing asasflow_users provider has different settings; '
+                "The existing [{$provider}] provider has different settings; "
                 . 'it was preserved. Review config/auth.php manually.';
 
             return;

@@ -7,6 +7,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Tenant extends Model
 {
+    protected $table = 'asasflow_tenants';
+    
     protected $fillable = [
         'slug',
         'name',
@@ -21,6 +23,7 @@ class Tenant extends Model
         'settings' => 'array',
         'is_active' => 'boolean',
     ];
+
 
     public function domains(): HasMany
     {

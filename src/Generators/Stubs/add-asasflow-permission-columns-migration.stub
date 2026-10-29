@@ -1,0 +1,66 @@
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        if (Schema::hasTable('permissions')) {
+            Schema::table('permissions', function (Blueprint $table) {
+                if (!Schema::hasColumn('permissions', 'description')) {
+                    $table->string('description')->nullable()->after('name');
+                }
+                if (!Schema::hasColumn('permissions', 'deleted_at')) {
+                    $table->softDeletes();
+                }
+            });
+        }
+
+        if (Schema::hasTable('roles')) {
+            Schema::table('roles', function (Blueprint $table) {
+                if (!Schema::hasColumn('roles', 'tenant_id')) {
+                    $table->unsignedBigInteger('tenant_id')->nullable()->index()->after('id');
+                }
+                if (!Schema::hasColumn('roles', 'description')) {
+                    $table->text('description')->nullable()->after('name');
+                }
+                if (!Schema::hasColumn('roles', 'is_active')) {
+                    $table->boolean('is_active')->default(true)->after('guard_name');
+                }
+                if (!Schema::hasColumn('roles', 'deleted_at')) {
+                    $table->softDeletes();
+                }
+            });
+        }
+    }
+
+    public function down(): void
+    {
+        if (Schema::hasTable('permissions')) {
+            Schema::table('permissions', function (Blueprint $table) {
+                $columns = array_filter(
+                    ['description', 'deleted_at'],
+                    fn(string $col) => Schema::hasColumn('permissions', $col)
+                );
+                if (!empty($columns)) {
+                    $table->dropColumn($columns);
+                }
+            });
+        }
+
+        if (Schema::hasTable('roles')) {
+            Schema::table('roles', function (Blueprint $table) {
+                $columns = array_filter(
+                    ['tenant_id', 'description', 'is_active', 'deleted_at'],
+                    fn(string $col) => Schema::hasColumn('roles', $col)
+                );
+                if (!empty($columns)) {
+                    $table->dropColumn($columns);
+                }
+            });
+        }
+    }
+};

@@ -485,6 +485,10 @@ return [
         'exempt_tables' => [
             'tenants',
             'tenant_domains',
+            'permissions',
+            'role_has_permissions',
+            'model_has_roles',
+            'model_has_permissions',
             'migrations',
             'jobs',
             'failed_jobs',
@@ -494,6 +498,7 @@ return [
         // Tables that get tenant_id, but NEVER get site_id
         'site_exempt_tables' => [
             'sites',
+            'roles',
         ],
 
         // Central domains (landlord access)

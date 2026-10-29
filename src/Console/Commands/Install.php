@@ -42,6 +42,7 @@ class Install extends Command
         // }
         if (! app(ComposerAutoloadInstaller::class)->install($this)) return self::FAILURE;
 
+        $this->setupPermissions();
         $this->setupJwt();
         $this->call('config:clear');
         if ($this->option('migrate')) {
@@ -72,5 +73,41 @@ class Install extends Command
         foreach (($result['messages'] ?? []) as $message) $this->line("  - {$message}");
         foreach (($result['errors'] ?? []) as $error) $this->components->warn($error);
         $this->newLine();
+    }
+
+    private function setupPermissions(): void
+    {
+        $this->components->info('Checking Spatie Permission configuration & migrations...');
+
+        if (! File::exists(config_path('permission.php'))) {
+            $this->call('vendor:publish', [
+                '--provider' => 'Spatie\\Permission\\PermissionServiceProvider',
+                '--tag' => 'permission-config',
+            ]);
+        }
+
+        $existingMigrations = glob(database_path('migrations/*_create_permission_tables.php')) ?: [];
+
+        if (empty($existingMigrations)) {
+            $this->call('vendor:publish', [
+                '--provider' => 'Spatie\\Permission\\PermissionServiceProvider',
+                '--tag' => 'permission-migrations',
+            ]);
+            $this->components->info('Published Spatie permission migration.');
+        } else {
+            $this->line('  - Spatie permission migration already exists.');
+        }
+
+        $existingExtension = glob(database_path('migrations/*_add_asasflow_columns_to_permission_tables.php')) ?: [];
+
+        if (empty($existingExtension)) {
+            $stubPath = __DIR__ . '/../../Generators/Stubs/add-asasflow-permission-columns-migration.stub';
+            if (File::exists($stubPath)) {
+                $timestamp = date('Y_m_d_His', time() + 1);
+                $targetPath = database_path("migrations/{$timestamp}_add_asasflow_columns_to_permission_tables.php");
+                File::copy($stubPath, $targetPath);
+                $this->components->info('Published AsasFlow permission columns migration.');
+            }
+        }
     }
 }

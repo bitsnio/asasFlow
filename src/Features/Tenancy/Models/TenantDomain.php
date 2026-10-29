@@ -7,6 +7,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class TenantDomain extends Model
 {
+    protected $table = 'asasflow_tenant_domains';
+
     protected $fillable = [
         'tenant_id',
         'domain',

@@ -7,9 +7,13 @@ use Bitsnio\AsasFlow\Features\Settings\SettingsServiceProvider;
 use Bitsnio\AsasFlow\Features\Tenancy\TenancyServiceProvider;
 use Illuminate\Support\ServiceProvider;
 use Bitsnio\AsasFlow\Foundation\Contracts\ModuleRepositoryInterface;
+use Bitsnio\AsasFlow\Foundation\Models\Permission as AsasPermissionModel;
+use Bitsnio\AsasFlow\Foundation\Models\Role as AsasRoleModel;
+use Bitsnio\AsasFlow\Foundation\Support\MenuService;
 use Bitsnio\AsasFlow\Foundation\Support\ModuleRegistrar;
 use Bitsnio\AsasFlow\Foundation\Support\ModuleRepository;
 use Bitsnio\AsasFlow\Foundation\Support\ModuleDiscovery;
+use Bitsnio\AsasFlow\Foundation\Support\PermissionService;
 
 use Bitsnio\AsasFlow\Features\Settings\Services\ModuleSettingsDiscovery;
 
@@ -23,6 +27,11 @@ class AsasFlowServiceProvider extends ServiceProvider
 
         $this->mergeConfigFrom(__DIR__ . '/../config/asasflow.php', 'asasflow');
 
+        config([
+            'permission.models.role' => AsasRoleModel::class,
+            'permission.models.permission' => AsasPermissionModel::class,
+        ]);
+
          // Register feature service providers
         $this->app->register(SettingsServiceProvider::class);
         $this->app->register(CacheServiceProvider::class);
@@ -35,6 +44,12 @@ class AsasFlowServiceProvider extends ServiceProvider
         $this->app->singleton(ModuleDiscovery::class);
         $this->app->singleton(ModuleRegistrar::class);
 
+        $this->app->singleton(MenuService::class);
+        $this->app->alias(MenuService::class, 'asasflow.menu');
+
+        $this->app->singleton(PermissionService::class);
+        $this->app->alias(PermissionService::class, 'asasflow.permission');
+
          // Register tenancy if enabled
         if (config('asasflow.tenancy.enabled', false)) {
             $this->app->register(TenancyServiceProvider::class);
@@ -44,6 +59,7 @@ class AsasFlowServiceProvider extends ServiceProvider
         $this->app->booting(function () {
             if (config('asasflow.routes.enabled') === true) {
                 $this->loadRoutesFrom(__DIR__ . '/../routes/docs.php');
+                $this->loadRoutesFrom(__DIR__ . '/routes/api.php');
             }
         });
     }

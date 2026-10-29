@@ -156,10 +156,11 @@ class JwtSetupService
             return;
         }
 
-        $model = config(
+        $rawModel = (string) config(
             'asasflow.install.jwt.user_model',
             'Modules\\Core\\Models\\Users'
         );
+        $model = trim(preg_replace('/::class$/', '', trim($rawModel)), "\\'\" ");
 
         $provider = config('asasflow.install.jwt.provider', 'users');
         $guard = config('asasflow.install.jwt.guard', 'api');
@@ -176,7 +177,7 @@ class JwtSetupService
         if ($providerEntry === null) {
             $entry = "'{$provider}' => [\n"
                 . "            'driver' => 'eloquent',\n"
-                . "            'model' => " . var_export($model, true) . ",\n"
+                . "            'model' => \\{$model}::class,\n"
                 . '        ],';
 
             $updated = $this->insertEntry($content, 'providers', $entry);
@@ -190,10 +191,18 @@ class JwtSetupService
             }
 
             $content = $updated;
-        } elseif (
-            ! $this->entryHasValue($providerEntry, 'driver', 'eloquent')
-            || ! $this->entryHasModel($providerEntry, $model)
-        ) {
+        } elseif (! $this->entryHasModel($providerEntry, $model)) {
+            $updatedEntry = preg_replace(
+                '/([\'"]model[\'"]\s*=>\s*)([^,\n\r]+)/',
+                '$1\\' . $model . '::class',
+                $providerEntry,
+                1
+            );
+
+            if ($updatedEntry !== null && $updatedEntry !== $providerEntry) {
+                $content = str_replace($providerEntry, $updatedEntry, $content);
+            }
+        } elseif (! $this->entryHasValue($providerEntry, 'driver', 'eloquent')) {
             $result['errors'][] =
                 "The existing [{$provider}] provider has different settings; "
                 . 'it was preserved. Review config/auth.php manually.';
@@ -407,9 +416,12 @@ class JwtSetupService
         string $entry,
         string $model
     ): bool {
+        $normalized = ltrim($model, '\\');
+
         return preg_match(
-            '/[\'"]model[\'"]\s*=>\s*[\'"]'
-                . preg_quote($model, '/') . '[\'"]/',
+            '/[\'"]model[\'"]\s*=>\s*(?:[\'"]\\\\?'
+                . preg_quote($normalized, '/') . '[\'"]|\\\\?'
+                . preg_quote($normalized, '/') . '::class)/',
             $entry
         ) === 1;
     }

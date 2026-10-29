@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Bitsnio\AsasFlow\Console\Commands\ControllerCommands;
 
+use Bitsnio\AsasFlow\Facades\Menu;
 use Bitsnio\AsasFlow\Foundation\Contracts\GeneratorInterface;
 use Bitsnio\AsasFlow\Foundation\Contracts\ModuleRepositoryInterface;
 use Bitsnio\AsasFlow\Foundation\Support\FileHandler;
@@ -106,6 +107,8 @@ class GenerateControllersCommand extends Command
                 $only,
                 $options,
             );
+
+            Menu::clearCache();
 
             $this->displayResults($results);
 

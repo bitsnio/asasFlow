@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Bitsnio\AsasFlow\Console\Commands\ControllerCommands;
 
+use Bitsnio\AsasFlow\Facades\Menu;
 use Bitsnio\AsasFlow\Foundation\Contracts\ModuleRepositoryInterface;
 use Bitsnio\AsasFlow\Foundation\Support\FileHandler;
 use Bitsnio\AsasFlow\Generators\Menu\MenuBuilder;
@@ -104,6 +105,8 @@ class GenerateFromSchemaCommand extends Command
 
                 return self::SUCCESS;
             }
+
+            Menu::clearCache();
 
             $this->displayResults($results);
 

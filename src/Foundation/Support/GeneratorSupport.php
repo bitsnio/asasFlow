@@ -128,19 +128,33 @@ class GeneratorSupport
             : [];
     }
 
-    public function traitImports(string $generator): string
-    {
+    public function generatorTraits(
+        string $generator,
+        array $requiredTraits = []
+    ): array {
+        return $this->normalizeClasses([
+            ...$requiredTraits,
+            ...$this->configuredTraits($generator),
+        ]);
+    }
+
+    public function traitImports(
+        string $generator,
+        array $requiredTraits = []
+    ): string {
         return $this->imports(
-            $this->configuredTraits($generator)
+            $this->generatorTraits($generator, $requiredTraits)
         );
     }
 
     /**
      * Generate trait usage statements for inside a PHP class.
      */
-    public function traitUsage(string $generator): string
-    {
-        $traits = $this->configuredTraits($generator);
+    public function traitUsage(
+        string $generator,
+        array $requiredTraits = []
+    ): string {
+        $traits = $this->generatorTraits($generator, $requiredTraits);
 
         if ($traits === []) {
             return '';

@@ -202,7 +202,9 @@ class SchemaDefinition
                 ? (string) $name
                 : $path . '.' . $name;
 
-            $isRequired = in_array((string) $name, $required, true);
+            $isRequired = ($property['readOnly'] ?? false) === true
+                ? false
+                : in_array((string) $name, $required, true);
 
             $fieldRules = $this->rulesForProperty($property, $isRequired, $path);
             // $fieldRules = $this->rulesForProperty(

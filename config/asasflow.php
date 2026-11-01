@@ -559,12 +559,17 @@ return [
          * Traits imported and applied inside the generated class.
          * Use fully qualified trait names.
          */
-            'traits' => [],
+            'traits' => [
+                \Bitsnio\AsasFlow\Foundation\Http\Traits\JsonResponseTrait::class,
+            ],
 
             'features' => [
                 'pagination' => [
                     'enabled' => true,
                     'per_page' => 15,
+                    'max_per_page' => 100,
+                    'allow_unpaginated' => false,
+                    'max_unpaginated' => 500,
                 ],
 
                 /*
@@ -592,7 +597,9 @@ return [
     */
         'request' => [
             'imports' => [],
-            'traits' => [],
+            'traits' => [
+                \Bitsnio\AsasFlow\Foundation\Http\Traits\HandlesApiValidation::class,
+            ],
 
             'features' => [
                 'schema_rules' => [
@@ -616,6 +623,9 @@ return [
                 ],
             ],
         ],
+    ],
+    'responses' => [
+        'render_exceptions' => env('ASASFLOW_RENDER_API_EXCEPTIONS', true),
     ],
     'install' => [
         /*

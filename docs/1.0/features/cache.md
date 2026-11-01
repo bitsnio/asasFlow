@@ -583,22 +583,32 @@ use Modules\Users\Models\User;
 
 class UserController extends Controller
 {
+    use \Bitsnio\AsasFlow\Foundation\Http\Traits\JsonResponseTrait;
+
     #[AutoCache(ttl: 300)]  // Cache for 5 minutes
     public function index()
     {
-        return User::paginate(20);
+        $items = $this->paginateQuery(User::query(), 20);
+
+        return $this->paginatedResponse(
+            UserResource::collection($items)
+        );
     }
 
     #[AutoCache(ttl: 600, tags: 'user-profiles')]  // Custom tag
     public function show(User $user)
     {
-        return $user->load('department', 'roles');
+        return $this->successResponse(
+            new UserResource($user->load('department', 'roles'))
+        );
     }
 
     #[NoCache(reason: 'Real-time data')]  // Never cache
     public function onlineStatus()
     {
-        return ['count' => User::where('last_seen', '>', now()->subMinutes(5))->count()];
+        return $this->successResponse([
+            'count' => User::where('last_seen', '>', now()->subMinutes(5))->count(),
+        ]);
     }
 }
 ```

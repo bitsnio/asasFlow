@@ -6,12 +6,14 @@ namespace Bitsnio\AsasFlow\Generators\Controller;
 
 use Bitsnio\AsasFlow\Foundation\Contracts\GeneratorInterface;
 use Bitsnio\AsasFlow\Foundation\Contracts\SchemaArtifactGeneratorInterface;
+use Bitsnio\AsasFlow\Foundation\Http\Traits\JsonResponseTrait;
 use Bitsnio\AsasFlow\Foundation\Support\FileHandler;
 use Bitsnio\AsasFlow\Foundation\Support\GeneratedBlock;
 use Bitsnio\AsasFlow\Foundation\Support\GeneratorSupport;
 use Bitsnio\AsasFlow\Foundation\Support\MenuDefinition;
 use Bitsnio\AsasFlow\Foundation\Support\SchemaDefinition;
 use Bitsnio\AsasFlow\Foundation\Support\StubRenderer;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Throwable;
@@ -37,9 +39,12 @@ class ControllerGenerator implements GeneratorInterface, SchemaArtifactGenerator
     ): array {
         $results = [];
 
-        foreach ($definitions as $definition) {$this->generateNode(
-                $module,$definition,
-                $options,$results,
+        foreach ($definitions as $definition) {
+            $this->generateNode(
+                $module,
+                $definition,
+                $options,
+                $results,
             );
         }
 
@@ -57,7 +62,8 @@ class ControllerGenerator implements GeneratorInterface, SchemaArtifactGenerator
         }
 
         return $this->createOrSyncController(
-            $module,$definition,
+            $module,
+            $definition,
             (bool) ($options['force'] ?? false),
             $schema,
         );
@@ -70,8 +76,9 @@ class ControllerGenerator implements GeneratorInterface, SchemaArtifactGenerator
         array &$results,
     ): void {
         if ($definition->hasController()) {
-            $result =$this->createOrSyncController(
-                $module,$definition,
+            $result = $this->createOrSyncController(
+                $module,
+                $definition,
                 (bool) ($options['force'] ?? false),
             );
 
@@ -83,9 +90,12 @@ class ControllerGenerator implements GeneratorInterface, SchemaArtifactGenerator
             ];
         }
 
-        foreach ($definition->children as $child) {$this->generateNode(
-                $module,$child,
-                $options,$results,
+        foreach ($definition->children as $child) {
+            $this->generateNode(
+                $module,
+                $child,
+                $options,
+                $results,
             );
         }
     }
@@ -96,13 +106,15 @@ class ControllerGenerator implements GeneratorInterface, SchemaArtifactGenerator
         bool $force = false,
         ?SchemaDefinition $schema = null,
     ): array {
-        $relative =$definition->controllerRelativePath();
-        $path =$this->files->getControllerPath($module,$relative);
-        $exists =$this->files->exists($path);$useModel = $this->shouldUseModel($module, $definition,$schema);
+        $relative = $definition->controllerRelativePath();
+        $path = $this->files->getControllerPath($module, $relative);
+        $exists = $this->files->exists($path);
+        $useModel = $this->shouldUseModel($module, $definition, $schema);
 
         if (!$exists || $force) {
-            $this->files->writeFile($path,
-                $this->content($module, $definition,$useModel),
+            $this->files->writeFile(
+                $path,
+                $this->content($module, $definition, $useModel),
                 true,
             );
 
@@ -112,27 +124,31 @@ class ControllerGenerator implements GeneratorInterface, SchemaArtifactGenerator
             ];
         }
 
-        $document =$this->files->read($path);$modelImportRemoved = false;
+        $document = $this->files->read($path);
+        $modelImportRemoved = false;
 
         // If the schema disabled model generation, strip the model import if Phase 1 added it
         if (!$useModel) {
-            $modelFqcn =$this->support->modelNamespace($module) . '\\' .$definition->modelClass();
-            $cleanedDocument =$this->removeImport($document,$modelFqcn);
+            $modelFqcn = $this->support->modelNamespace($module) . '\\' . $definition->modelClass();
+            $cleanedDocument = $this->removeImport($document, $modelFqcn);
 
-            if ($cleanedDocument !==$document) {
-                $document =$cleanedDocument;
+            if ($cleanedDocument !== $document) {
+                $document = $cleanedDocument;
                 $modelImportRemoved = true;
             }
         }
 
-        [$updatedDocument, $addedMethods] =$this->actionSynchronizer->sync(
-            $document,$this->methodMap($definition,$useModel),
+        [$updatedDocument, $addedMethods] = $this->actionSynchronizer->sync(
+            $document,
+            $this->methodMap($definition, $useModel),
         );
 
-        if (!empty($addedMethods) || $modelImportRemoved) {$this->files->writeFile($path,$updatedDocument, true);
+        if (!empty($addedMethods) || $modelImportRemoved) {
+            $this->files->writeFile($path, $updatedDocument, true);
 
             $details = [];
-            if ($modelImportRemoved) {$details[] = 'removed model import';
+            if ($modelImportRemoved) {
+                $details[] = 'removed model import';
             }
             if (!empty($addedMethods)) {
                 $details[] = 'added: ' . implode(', ', $addedMethods);
@@ -145,9 +161,10 @@ class ControllerGenerator implements GeneratorInterface, SchemaArtifactGenerator
         }
 
         if (GeneratedBlock::has($document, 'methods')) {
-            $this->files->updateGeneratedBlock($path,
+            $this->files->updateGeneratedBlock(
+                $path,
                 'methods',
-                $this->methods($definition,$useModel),
+                $this->methods($definition, $useModel),
             );
 
             return [
@@ -179,7 +196,7 @@ class ControllerGenerator implements GeneratorInterface, SchemaArtifactGenerator
             return $schema->shouldGenerate('models');
         }
 
-        $schemaPath = $module->getPath() . '/schema/' .$definition->schemaName() . '.json';
+        $schemaPath = $module->getPath() . '/schema/' . $definition->schemaName() . '.json';
 
         if (is_file($schemaPath)) {
             try {
@@ -192,11 +209,11 @@ class ControllerGenerator implements GeneratorInterface, SchemaArtifactGenerator
         return true;
     }
 
-    protected function removeImport(string $document, string$fqcn): string
+    protected function removeImport(string $document, string $fqcn): string
     {
         $pattern = '/^use\s+' . preg_quote($fqcn, '/') . '\s*;\R?/m';
 
-        return (string) preg_replace($pattern, '',$document);
+        return (string) preg_replace($pattern, '', $document);
     }
 
     protected function content(
@@ -207,12 +224,12 @@ class ControllerGenerator implements GeneratorInterface, SchemaArtifactGenerator
         return $this->stubs->renderFile(
             'controller.stub',
             [
-                'NAMESPACE' => $this->support->controllerNamespace($module,$definition),
+                'NAMESPACE' => $this->support->controllerNamespace($module, $definition),
                 'CLASS' => $definition->controllerClass,
-                'IMPORTS' => $this->imports($module, $definition,$useModel),
-                'TRAIT_IMPORTS' => $this->support->traitImports('controller'),
-                'TRAITS' => $this->support->traitUsage('controller'),
-                'METHODS' => $this->methods($definition,$useModel),
+                'IMPORTS' => $this->imports($module, $definition, $useModel),
+                'TRAIT_IMPORTS' => $this->support->traitImports('controller', [JsonResponseTrait::class]),
+                'TRAITS' => $this->support->traitUsage('controller', [JsonResponseTrait::class]),
+                'METHODS' => $this->methods($definition, $useModel),
             ],
         );
     }
@@ -222,51 +239,56 @@ class ControllerGenerator implements GeneratorInterface, SchemaArtifactGenerator
         MenuDefinition $definition,
         bool $useModel = true,
     ): string {
-        $imports = [];
-        $actions =$definition->routeActions();
+        $imports = [
+            JsonResponse::class,
+        ];
+        $actions = $definition->routeActions();
 
-        if (in_array('store', $actions, true) || in_array('update',$actions, true)) {
-            $imports[] =$this->support->requestNamespace($module,$definition)
+        if (in_array('store', $actions, true) || in_array('update', $actions, true)) {
+            $imports[] = $this->support->requestNamespace($module, $definition)
                 . '\\'
                 . $definition->requestClass();
         }
 
-        if ($useModel) {$imports[] = $this->support->modelNamespace($module)
+        if ($useModel) {
+            $imports[] = $this->support->modelNamespace($module)
                 . '\\'
                 . $definition->modelClass();
         }
 
         if ($definition->hasResource()) {
-            $imports[] =$this->support->resourceNamespace($module,$definition)
+            $imports[] = $this->support->resourceNamespace($module, $definition)
                 . '\\'
                 . $definition->resourceClass;
         }
 
-        if ($definition->customActions()) {$imports[] = Request::class;
+        if ($definition->customActions()) {
+            $imports[] = Request::class;
         }
 
-        return $this->support->generatorImports('controller',$imports);
+        return $this->support->generatorImports('controller', $imports);
     }
 
-    protected function methodMap(MenuDefinition $definition, bool$useModel = true): array
+    protected function methodMap(MenuDefinition $definition, bool $useModel = true): array
     {
         $map = [];
 
-        foreach ($definition->routeActions() as$action) {
+        foreach ($definition->routeActions() as $action) {
             $code = match ($action) {
-                'index' => $this->indexMethod($definition,$useModel),
-                'store' => $this->storeMethod($definition,$useModel),
-                'show' => $this->showMethod($definition,$useModel),
-                'update' => $this->updateMethod($definition,$useModel),
-                'destroy' => $this->destroyMethod($definition,$useModel),
+                'index' => $this->indexMethod($definition, $useModel),
+                'store' => $this->storeMethod($definition, $useModel),
+                'show' => $this->showMethod($definition, $useModel),
+                'update' => $this->updateMethod($definition, $useModel),
+                'destroy' => $this->destroyMethod($definition, $useModel),
                 default => '',
             };
 
-            if ($code !== '') {$map[$action] =$code;
+            if ($code !== '') {
+                $map[$action] = $code;
             }
         }
 
-        foreach (array_keys($definition->customActions()) as$actionName) {
+        foreach (array_keys($definition->customActions()) as $actionName) {
             $methodName = Str::camel($actionName);
             $map[$methodName] = $this->customActionMethod($actionName);
         }
@@ -274,11 +296,11 @@ class ControllerGenerator implements GeneratorInterface, SchemaArtifactGenerator
         return $map;
     }
 
-    protected function methods(MenuDefinition $definition, bool$useModel = true): string
+    protected function methods(MenuDefinition $definition, bool $useModel = true): string
     {
         return implode(
             PHP_EOL . PHP_EOL,
-            array_values($this->methodMap($definition,$useModel)),
+            array_values($this->methodMap($definition, $useModel)),
         );
     }
 
@@ -287,173 +309,175 @@ class ControllerGenerator implements GeneratorInterface, SchemaArtifactGenerator
         $method = Str::camel($actionName);
 
         return <<<PHP
-            public function {$method}(Request \$request)
+            public function {$method}(Request \$request): JsonResponse
             {
-                return response()->json([
-                    'message' => '{$method} not implemented',
-                ], 501);
+                return \$this->notImplementedResponse(
+                    '{$method} not implemented'
+                );
             }
         PHP;
     }
 
-    protected function indexMethod(MenuDefinition $definition, bool$useModel = true): string
+    protected function indexMethod(MenuDefinition $definition, bool $useModel = true): string
     {
         if (!$useModel) {
             return <<<'PHP'
-                public function index()
+                public function index(): JsonResponse
                 {
-                    return response()->json([
-                        'message' => 'Index not implemented',
-                    ], 501);
-                }
-            PHP;
-        }
-
-        $paginationEnabled =$this->support->featureEnabled('controller', 'pagination');
-        $paginationConfig =$this->support->featureConfig('controller', 'pagination', []);
-
-        $perPage = is_array($paginationConfig)
-            ? filter_var(
-                $paginationConfig['per_page'] ?? 20,
-                FILTER_VALIDATE_INT,
-                ['options' => ['min_range' => 1]],
-            )
-            : 20;
-
-        $perPage =$perPage ?: 20;
-
-        $pagination =$paginationEnabled
-            ? "paginate({$perPage})"
-            : 'paginate()';
-
-        $query = $definition->modelClass() . "::{$pagination}";
-
-        if ($definition->hasResource()) {
-            return <<<PHP
-                public function index()
-                {
-                    return {$definition->resourceClass}::collection(
-                        {$query}
+                    return $this->notImplementedResponse(
+                        'Index not implemented'
                     );
                 }
             PHP;
         }
 
+        $paginationEnabled = $this->support->featureEnabled('controller', 'pagination');
+        $paginationConfig = $this->support->featureConfig('controller', 'pagination', []);
+
+        $perPage = is_array($paginationConfig)
+            ? filter_var(
+                $paginationConfig['per_page'] ?? 15,
+                FILTER_VALIDATE_INT,
+                ['options' => ['min_range' => 1]],
+            )
+            : 15;
+
+        $perPage = $perPage ?: 15;
+        $modelClass = $definition->modelClass();
+
+        $fetchExpression = $paginationEnabled
+            ? "\$this->paginateQuery({$modelClass}::query(), {$perPage})"
+            : "{$modelClass}::query()->get()";
+
+        $payload = $definition->hasResource()
+            ? "{$definition->resourceClass}::collection(\$items)"
+            : '$items';
+
         return <<<PHP
-            public function index()
+            public function index(): JsonResponse
             {
-                return {$query};
+                \$items = {$fetchExpression};
+
+                return \$this->paginatedResponse(
+                    {$payload}
+                );
             }
         PHP;
     }
 
-    protected function storeMethod(MenuDefinition $definition, bool$useModel = true): string
+    protected function storeMethod(MenuDefinition $definition, bool $useModel = true): string
     {
         if (!$useModel) {
             return <<<PHP
                 public function store(
                     {$definition->requestClass()} \$request
-                ) {
-                    return response()->json([
-                        'message' => 'Store not implemented',
-                    ], 501);
+                ): JsonResponse {
+                    return \$this->notImplementedResponse(
+                        'Store not implemented'
+                    );
                 }
             PHP;
         }
 
-        $return =$definition->hasResource()
-            ? "return new {$definition->resourceClass}(\$item);"
-            : 'return $item;';
+        $payload = $definition->hasResource()
+            ? "new {$definition->resourceClass}(\$item)"
+            : '$item';
 
         return <<<PHP
             public function store(
                 {$definition->requestClass()} \$request
-            ) {
+            ): JsonResponse {
                 \$item = {$definition->modelClass()}::create(
                     \$request->validated()
                 );
 
-                {$return}
+                return \$this->createdResponse(
+                    {$payload}
+                );
             }
         PHP;
     }
 
-    protected function showMethod(MenuDefinition $definition, bool$useModel = true): string
+    protected function showMethod(MenuDefinition $definition, bool $useModel = true): string
     {
-        $parameter =$definition->parameterName();
+        $parameter = $definition->parameterName();
 
         if (!$useModel) {
             return <<<PHP
                 public function show(
                     \${$parameter}
-                ) {
-                    return response()->json([
-                        'message' => 'Show not implemented',
-                    ], 501);
+                ): JsonResponse {
+                    return \$this->notImplementedResponse(
+                        'Show not implemented'
+                    );
                 }
             PHP;
         }
 
-        $return =$definition->hasResource()
-            ? "return new {$definition->resourceClass}(\${$parameter});"
-            : "return \${$parameter};";
+        $payload = $definition->hasResource()
+            ? "new {$definition->resourceClass}(\${$parameter})"
+            : "\${$parameter}";
 
         return <<<PHP
             public function show(
                 {$definition->modelClass()} \${$parameter}
-            ) {
-                {$return}
+            ): JsonResponse {
+                return \$this->successResponse(
+                    {$payload}
+                );
             }
         PHP;
     }
 
-    protected function updateMethod(MenuDefinition $definition, bool$useModel = true): string
+    protected function updateMethod(MenuDefinition $definition, bool $useModel = true): string
     {
-        $parameter =$definition->parameterName();
+        $parameter = $definition->parameterName();
 
         if (!$useModel) {
             return <<<PHP
                 public function update(
                     {$definition->requestClass()} \$request,
                     \${$parameter}
-                ) {
-                    return response()->json([
-                        'message' => 'Update not implemented',
-                    ], 501);
+                ): JsonResponse {
+                    return \$this->notImplementedResponse(
+                        'Update not implemented'
+                    );
                 }
             PHP;
         }
 
-        $return =$definition->hasResource()
-            ? "return new {$definition->resourceClass}(\${$parameter});"
-            : "return \${$parameter};";
+        $payload = $definition->hasResource()
+            ? "new {$definition->resourceClass}(\${$parameter})"
+            : "\${$parameter}";
 
         return <<<PHP
             public function update(
                 {$definition->requestClass()} \$request,
                 {$definition->modelClass()} \${$parameter}
-            ) {
+            ): JsonResponse {
                 \${$parameter}->update(
                     \$request->validated()
                 );
 
-                {$return}
+                return \$this->successResponse(
+                    {$payload}
+                );
             }
         PHP;
     }
 
-    protected function destroyMethod(MenuDefinition $definition, bool$useModel = true): string
+    protected function destroyMethod(MenuDefinition $definition, bool $useModel = true): string
     {
-        $parameter =$definition->parameterName();
+        $parameter = $definition->parameterName();
 
         if (!$useModel) {
             return <<<PHP
                 public function destroy(
                     \${$parameter}
-                ) {
-                    return response()->json([
-                        'message' => 'Destroy not implemented',
-                    ], 501);
+                ): JsonResponse {
+                    return \$this->notImplementedResponse(
+                        'Destroy not implemented'
+                    );
                 }
             PHP;
         }
@@ -461,10 +485,13 @@ class ControllerGenerator implements GeneratorInterface, SchemaArtifactGenerator
         return <<<PHP
             public function destroy(
                 {$definition->modelClass()} \${$parameter}
-            ) {
+            ): JsonResponse {
                 \${$parameter}->delete();
 
-                return response()->noContent();
+                return \$this->successResponse(
+                    null,
+                    'Deleted successfully'
+                );
             }
         PHP;
     }

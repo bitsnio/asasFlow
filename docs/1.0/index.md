@@ -11,5 +11,6 @@
     - [Settings](/{{route}}/{{version}}/features/settings)
     - [Cache](/{{route}}/{{version}}/features/cache)
 - ## How To Use
+    - [Unified Responses & Pagination](/{{route}}/{{version}}/how_to_use/responses_and_pagination)
     - [Filters And Pagination](/{{route}}/{{version}}/how_to_use/filters_and_pagination)
     

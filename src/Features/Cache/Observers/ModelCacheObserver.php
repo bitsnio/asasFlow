@@ -4,12 +4,15 @@ namespace Bitsnio\AsasFlow\Features\Cache\Observers;
 
 use Bitsnio\AsasFlow\Features\Cache\Services\CacheInvalidator;
 use Bitsnio\AsasFlow\Features\Cache\Services\CacheKeyGenerator;
+use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Database\Eloquent\Model;
 
 class ModelCacheObserver
 {
     protected CacheInvalidator $invalidator;
     protected CacheKeyGenerator $keyGenerator;
+    protected array $cacheTags = [];
+    protected array $cacheInvalidationRelations = [];
 
     public function __construct(
         CacheInvalidator $invalidator,
@@ -52,7 +55,7 @@ class ModelCacheObserver
 
         $tags = $this->getModelCacheTags($model);
 
-        $this->invalidator->invalidate($modelClass, (string) $modelId);
+        $this->invalidator->invalidate($modelClass, $modelId !== null ? (string) $modelId : null);
 
         if (!empty($tags)) {
             $this->invalidator->invalidateTags($tags);
@@ -63,27 +66,27 @@ class ModelCacheObserver
 
     protected function getModelCacheTags(Model $model): array
     {
+        $tags = $this->cacheTags;
+
         if (method_exists($model, 'getCacheTags')) {
-            return $model->getCacheTags();
+            $tags = array_merge($tags, (array) $model->getCacheTags());
+        } elseif (property_exists($model, 'cacheTags')) {
+            $tags = array_merge($tags, (array) $model->cacheTags);
         }
 
-        if (property_exists($model, 'cacheTags')) {
-            return (array) $model->cacheTags;
-        }
-
-        return [];
+        return array_values(array_unique(array_filter($tags)));
     }
 
     protected function invalidateTouchedRelations(Model $model): void
     {
-        if (!method_exists($model, 'touches')) {
+        if (!method_exists($model, 'getTouchedRelations')) {
             return;
         }
 
-        foreach ($model->touches as $relation) {
+        foreach ($model->getTouchedRelations() as $relation) {
             if ($model->relationLoaded($relation) || $model->isDirty($relation)) {
                 $related = $model->$relation;
-                if ($related) {
+                if ($related instanceof Model) {
                     $this->invalidator->invalidate(get_class($related), (string) $related->getKey());
                 }
             }
@@ -92,24 +95,24 @@ class ModelCacheObserver
 
     protected function invalidateRelations(Model $model, string $event): void
     {
-        if (!method_exists($model, 'getCacheInvalidationRelations')) {
-            return;
-        }
+        $relations = $this->cacheInvalidationRelations;
 
-        $relations = $model->getCacheInvalidationRelations();
+        if (method_exists($model, 'getCacheInvalidationRelations')) {
+            $relations = array_replace($relations, (array) $model->getCacheInvalidationRelations());
+        }
 
         foreach ($relations as $relation => $config) {
             if ($event === 'updated' && !empty($config['on_update'])) {
-                $this->invalidateRelation($model, $relation, $config);
+                $this->invalidateRelation($model, (string) $relation);
             }
 
             if ($event === 'deleted' && !empty($config['on_delete'])) {
-                $this->invalidateRelation($model, $relation, $config);
+                $this->invalidateRelation($model, (string) $relation);
             }
         }
     }
 
-    protected function invalidateRelation(Model $model, string $relation, array $config): void
+    protected function invalidateRelation(Model $model, string $relation): void
     {
         if (!$model->relationLoaded($relation) && !$model->isDirty($relation)) {
             return;
@@ -119,9 +122,11 @@ class ModelCacheObserver
 
         if ($related instanceof Model) {
             $this->invalidator->invalidate(get_class($related), (string) $related->getKey());
-        } elseif ($related instanceof \Illuminate\Database\Eloquent\Collection) {
+        } elseif ($related instanceof EloquentCollection) {
             foreach ($related as $item) {
-                $this->invalidator->invalidate(get_class($item), (string) $item->getKey());
+                if ($item instanceof Model) {
+                    $this->invalidator->invalidate(get_class($item), (string) $item->getKey());
+                }
             }
         }
     }

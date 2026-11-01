@@ -2,10 +2,12 @@
 
 namespace {{ NAMESPACE }};
 
-use Illuminate\Foundation\Http\FormRequest;
+{{ IMPORTS }}
+{{ TRAIT_IMPORTS }}
 
 class {{ CLASS }} extends FormRequest
 {
+{{ TRAITS }}
     public function authorize(): bool
     {
         return true;
@@ -13,8 +15,8 @@ class {{ CLASS }} extends FormRequest
 
     public function rules(): array
     {
-        // @asasflow:rules:start
+        // @asasflow:generated-rules:start
         return [];
-        // @asasflow:rules:end
+        // @asasflow:generated-rules:end
     }
 }

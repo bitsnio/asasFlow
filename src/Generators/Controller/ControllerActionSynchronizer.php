@@ -4,13 +4,15 @@ declare(strict_types=1);
 
 namespace Bitsnio\AsasFlow\Generators\Controller;
 
+use Bitsnio\AsasFlow\Foundation\Http\Traits\JsonResponseTrait;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Str;
 
 class ControllerActionSynchronizer
 {
     /**
-     * Inspects an existing controller file content and appends any missing action methods.
+     * Inspects an existing controller file content and appends any missing action methods
+     * without overwriting developer-modified existing methods.
      *
      * @return array{0: string, 1: array<int, string>} [updatedContent, addedMethodNames]
      */
@@ -19,6 +21,8 @@ class ControllerActionSynchronizer
         $missingSnippets = [];
         $addedMethodNames = [];
         $needsRequestImport = false;
+        $needsJsonResponseImport = false;
+        $needsResponseTrait = false;
 
         foreach ($expectedMethods as $methodName => $codeSnippet) {
             if (!$this->methodExistsInClass($document, $methodName)) {
@@ -27,6 +31,20 @@ class ControllerActionSynchronizer
 
                 if (str_contains($codeSnippet, 'Request $request')) {
                     $needsRequestImport = true;
+                }
+
+                if (str_contains($codeSnippet, 'JsonResponse')) {
+                    $needsJsonResponseImport = true;
+                }
+
+                if (
+                    str_contains($codeSnippet, '$this->paginatedResponse(')
+                    || str_contains($codeSnippet, '$this->successResponse(')
+                    || str_contains($codeSnippet, '$this->createdResponse(')
+                    || str_contains($codeSnippet, '$this->errorResponse(')
+                    || str_contains($codeSnippet, '$this->notImplementedResponse(')
+                ) {
+                    $needsResponseTrait = true;
                 }
             }
         }
@@ -37,6 +55,15 @@ class ControllerActionSynchronizer
 
         if ($needsRequestImport) {
             $document = $this->ensureImportExists($document, Request::class);
+        }
+
+        if ($needsJsonResponseImport) {
+            $document = $this->ensureImportExists($document, JsonResponse::class);
+        }
+
+        if ($needsResponseTrait) {
+            $document = $this->ensureImportExists($document, JsonResponseTrait::class);
+            $document = $this->ensureTraitUsedInClass($document, class_basename(JsonResponseTrait::class));
         }
 
         $lastBracePos = strrpos($document, '}');
@@ -98,5 +125,30 @@ class ControllerActionSynchronizer
         }
 
         return $document;
+    }
+
+    protected function ensureTraitUsedInClass(string $document, string $traitShortName): string
+    {
+        $classPos = strpos($document, 'class ');
+        if ($classPos === false) {
+            return $document;
+        }
+
+        $classBody = substr($document, $classPos);
+        $traitPattern = '/^\s*use\s+[^;]*\b' . preg_quote($traitShortName, '/') . '\b[^;]*;/m';
+
+        if (preg_match($traitPattern, $classBody) === 1) {
+            return $document;
+        }
+
+        $openBracePos = strpos($document, '{', $classPos);
+        if ($openBracePos === false) {
+            return $document;
+        }
+
+        return substr($document, 0, $openBracePos + 1)
+            . PHP_EOL
+            . "    use {$traitShortName};"
+            . substr($document, $openBracePos + 1);
     }
 }

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Bitsnio\AsasFlow\Http\Controllers;
 
 use Bitsnio\AsasFlow\Facades\Menu;
+use Bitsnio\AsasFlow\Foundation\Http\Traits\JsonResponseTrait;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -13,36 +14,25 @@ use Throwable;
 
 class SchemaController extends Controller
 {
+    use JsonResponseTrait;
+
     public function show(Request $request): JsonResponse
     {
         $link = (string) $request->query('link', '');
         $id = $request->query('id');
 
         if ($link === '') {
-            return response()->json([
-                'success' => false,
-                'message' => 'Query parameter [link] is required.',
-            ], 422);
+            return $this->errorResponse('Query parameter [link] is required.', 422);
         }
 
         try {
             $data = Menu::getSchemaByLink($link, $id);
 
-            return response()->json([
-                'success' => true,
-                'message' => 'Schema retrieved successfully.',
-                'data' => $data,
-            ]);
+            return $this->successResponse($data, 'Schema retrieved successfully.');
         } catch (ModelNotFoundException) {
-            return response()->json([
-                'success' => false,
-                'message' => "Record [{$id}] not found for schema link [{$link}].",
-            ], 404);
+            return $this->notFoundResponse("Record [{$id}] not found for schema link [{$link}].");
         } catch (Throwable $e) {
-            return response()->json([
-                'success' => false,
-                'message' => $e->getMessage(),
-            ], 404);
+            return $this->notFoundResponse($e->getMessage());
         }
     }
 }

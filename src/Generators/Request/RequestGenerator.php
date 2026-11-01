@@ -6,6 +6,7 @@ namespace Bitsnio\AsasFlow\Generators\Request;
 
 use Bitsnio\AsasFlow\Foundation\Contracts\GeneratorInterface;
 use Bitsnio\AsasFlow\Foundation\Contracts\SchemaArtifactGeneratorInterface;
+use Bitsnio\AsasFlow\Foundation\Http\Traits\HandlesApiValidation;
 use Bitsnio\AsasFlow\Foundation\Support\FileHandler;
 use Bitsnio\AsasFlow\Foundation\Support\GeneratedBlock;
 use Bitsnio\AsasFlow\Foundation\Support\GeneratorSupport;
@@ -82,21 +83,43 @@ class RequestGenerator implements GeneratorInterface, SchemaArtifactGeneratorInt
 
         $document = $this->files->read($path);
 
-        if (!GeneratedBlock::has($document, 'generated-rules')) {
+        if (GeneratedBlock::has($document, 'generated-rules')) {
+            $this->files->updateGeneratedBlock(
+                $path,
+                'generated-rules',
+                $this->buildRules($schema),
+            );
+
             return [
-                'action' => 'skipped-no-marker',
+                'action' => 'updated',
                 'path' => $path,
             ];
         }
 
-        $this->files->updateGeneratedBlock(
-            $path,
-            'generated-rules',
-            $this->buildRules($schema),
-        );
+        // Backward-compatibility: upgrade legacy `@asasflow:rules:start` marker to `@asasflow:generated-rules:start`
+        if (GeneratedBlock::has($document, 'rules')) {
+            $upgraded = str_replace(
+                ['// @asasflow:rules:start', '// @asasflow:rules:end'],
+                ['// @asasflow:generated-rules:start', '// @asasflow:generated-rules:end'],
+                $document,
+            );
+
+            $updated = GeneratedBlock::replace(
+                $upgraded,
+                'generated-rules',
+                $this->buildRules($schema),
+            );
+
+            $this->files->writeFile($path, $updated, true);
+
+            return [
+                'action' => 'updated',
+                'path' => $path,
+            ];
+        }
 
         return [
-            'action' => 'updated',
+            'action' => 'skipped-no-marker',
             'path' => $path,
         ];
     }
@@ -174,8 +197,8 @@ class RequestGenerator implements GeneratorInterface, SchemaArtifactGeneratorInt
                     'request',
                     [FormRequest::class],
                 ),
-                'TRAIT_IMPORTS' => $this->support->traitImports('request'),
-                'TRAITS' => $this->support->traitUsage('request'),
+                'TRAIT_IMPORTS' => $this->support->traitImports('request', [HandlesApiValidation::class]),
+                'TRAITS' => $this->support->traitUsage('request', [HandlesApiValidation::class]),
             ],
         );
     }
@@ -200,7 +223,7 @@ class RequestGenerator implements GeneratorInterface, SchemaArtifactGeneratorInt
             $exportedRules = implode(
                 ', ',
                 array_map(
-                    static fn($rule) => var_export($rule, true),
+                    static fn ($rule) => var_export($rule, true),
                     array_values($fieldRules),
                 ),
             );

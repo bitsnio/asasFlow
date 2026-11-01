@@ -9,6 +9,7 @@ use Bitsnio\AsasFlow\Features\Cache\Services\CacheManager;
 use Closure;
 use Illuminate\Http\Request;
 use ReflectionClass;
+use ReflectionException;
 use ReflectionMethod;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -40,63 +41,91 @@ class AutoCacheMiddleware
             return $next($request);
         }
 
-        $ttl = $routeConfig['ttl'] ?? ($ttl ? (int) $ttl : null);
-        $tags = $this->resolveTags($request, $routeConfig['tags'] ?? $tags);
+        $resolvedTtl = $routeConfig['ttl'] ?? ($ttl !== null && $ttl !== '' ? (int) $ttl : null);
+        $resolvedTags = $this->resolveTags($request, $routeConfig['tags'] ?? $tags);
 
-        return $this->cacheManager->remember($request, function () use ($next, $request) {
-            return $next($request);
-        }, $ttl, $tags);
+        $options = [
+            'ignore_query_params' => $routeConfig['ignore_query_params'] ?? false,
+        ];
+
+        if (array_key_exists('stampede_protection', $routeConfig) && $routeConfig['stampede_protection'] !== null) {
+            $options['stampede_protection'] = $routeConfig['stampede_protection'];
+        }
+
+        return $this->cacheManager->remember(
+            $request,
+            function () use ($next, $request) {
+                return $next($request);
+            },
+            $resolvedTtl,
+            $resolvedTags,
+            $options,
+        );
     }
 
     protected function getRouteCacheConfig(Request $request): array
     {
+        $default = [
+            'ttl' => null,
+            'tags' => null,
+            'skip' => false,
+            'ignore_query_params' => false,
+            'stampede_protection' => null,
+        ];
+
         $route = $request->route();
 
         if (!$route) {
-            return ['ttl' => null, 'tags' => null, 'skip' => false];
+            return $default;
         }
 
         $controller = $route->getControllerClass();
         $method = $route->getActionMethod();
 
         if (!$controller || !$method) {
-            return ['ttl' => null, 'tags' => null, 'skip' => false];
+            return $default;
         }
 
         try {
             $reflection = new ReflectionMethod($controller, $method);
 
-            foreach ($reflection->getAttributes(NoCache::class) as $attr) {
-                return ['ttl' => null, 'tags' => null, 'skip' => true];
+            if ($reflection->getAttributes(NoCache::class) !== []) {
+                return array_merge($default, ['skip' => true]);
             }
 
             $classReflection = new ReflectionClass($controller);
-            foreach ($classReflection->getAttributes(NoCache::class) as $attr) {
-                return ['ttl' => null, 'tags' => null, 'skip' => true];
+            if ($classReflection->getAttributes(NoCache::class) !== []) {
+                return array_merge($default, ['skip' => true]);
             }
 
             foreach ($reflection->getAttributes(AutoCache::class) as $attr) {
                 $instance = $attr->newInstance();
+
                 return [
                     'ttl' => $instance->ttl,
                     'tags' => $instance->tags,
                     'skip' => false,
+                    'ignore_query_params' => $instance->ignoreQueryParams,
+                    'stampede_protection' => $instance->stampedeProtection,
                 ];
             }
 
             foreach ($classReflection->getAttributes(AutoCache::class) as $attr) {
                 $instance = $attr->newInstance();
+
                 return [
                     'ttl' => $instance->ttl,
                     'tags' => $instance->tags,
                     'skip' => false,
+                    'ignore_query_params' => $instance->ignoreQueryParams,
+                    'stampede_protection' => $instance->stampedeProtection,
                 ];
             }
-        } catch (\ReflectionException $e) {
+        } catch (ReflectionException) {
             // Fallback to middleware params
         }
 
-        return ['ttl' => null, 'tags' => null, 'skip' => false];
+        return $default;
     }
 
     protected function resolveTags(Request $request, ?string $tags): array
@@ -108,9 +137,9 @@ class AutoCacheMiddleware
         }
 
         if ($tags) {
-            $result = array_merge($result, explode(',', $tags));
+            $result = array_merge($result, array_map('trim', explode(',', $tags)));
         }
 
-        return array_unique(array_filter($result));
+        return array_values(array_unique(array_filter($result)));
     }
 }

@@ -17,6 +17,11 @@ use Illuminate\Http\Resources\Json\JsonResource;
 
 class ResourceGenerator implements GeneratorInterface, SchemaArtifactGeneratorInterface
 {
+    protected const EXCLUDED_RESOURCE_FIELDS = [
+        'password',
+        'remember_token',
+    ];
+
     public function __construct(
         protected FileHandler $files,
         protected GeneratorSupport $support,
@@ -90,7 +95,7 @@ class ResourceGenerator implements GeneratorInterface, SchemaArtifactGeneratorIn
         $this->files->updateGeneratedBlock(
             $path,
             'generated-fields',
-            $this->buildFields($schema),
+            $this->buildFields($schema, $definition),
         );
 
         return [
@@ -107,7 +112,7 @@ class ResourceGenerator implements GeneratorInterface, SchemaArtifactGeneratorIn
         return GeneratedBlock::replace(
             $this->content($module, $definition),
             'generated-fields',
-            $this->buildFields($schema),
+            $this->buildFields($schema, $definition),
         );
     }
 
@@ -171,7 +176,7 @@ class ResourceGenerator implements GeneratorInterface, SchemaArtifactGeneratorIn
         );
     }
 
-    protected function buildFields(SchemaDefinition $schema): string
+    protected function buildFields(SchemaDefinition $schema, ?MenuDefinition $definition = null): string
     {
         if (!$this->support->featureEnabled('resource', 'schema_fields')) {
             return '        return [];';
@@ -183,11 +188,29 @@ class ResourceGenerator implements GeneratorInterface, SchemaArtifactGeneratorIn
             return '        return [];';
         }
 
+        $fields = ['id'];
+
+        if ($definition !== null) {
+            foreach ($this->tenancyFields($definition) as $tenancyField) {
+                $fields[] = $tenancyField;
+            }
+        }
+
+        foreach ($properties as $field => $property) {
+            if ($this->shouldExcludeField((string) $field, is_array($property) ? $property : [])) {
+                continue;
+            }
+
+            $fields[] = (string) $field;
+        }
+
+        $fields = array_values(array_unique($fields));
+
         $lines = [
             '        return [',
         ];
 
-        foreach (array_keys($properties) as $field) {
+        foreach ($fields as $field) {
             $lines[] = '            '
                 . var_export($field, true)
                 . " => \$this->{$field},";
@@ -196,5 +219,51 @@ class ResourceGenerator implements GeneratorInterface, SchemaArtifactGeneratorIn
         $lines[] = '        ];';
 
         return implode(PHP_EOL, $lines);
+    }
+
+    protected function shouldExcludeField(string $field, array $property): bool
+    {
+        if (in_array($field, self::EXCLUDED_RESOURCE_FIELDS, true)) {
+            return true;
+        }
+
+        if (($property['writeOnly'] ?? false) === true) {
+            return true;
+        }
+
+        $inputType = $property['widget']['formlyConfig']['templateOptions']['type']
+            ?? $property['widget']['formlyConfig']['props']['type']
+            ?? null;
+
+        return $inputType === 'password';
+    }
+
+    /**
+     * Include tenant_id and site_id on tenant-scoped resources to match ModelGenerator::buildFillable().
+     *
+     * @return array<int, string>
+     */
+    protected function tenancyFields(MenuDefinition $definition): array
+    {
+        $table = $definition->tableName();
+
+        if (
+            config('asasflow.tenancy.database_strategy', 'single') !== 'single'
+            || ($definition->config['tenancy'] ?? true) === false
+            || in_array($table, config('asasflow.tenancy.exempt_tables', ['tenants', 'tenant_domains']), true)
+        ) {
+            return [];
+        }
+
+        $fields = [(string) config('asasflow.tenancy.tenant_column', 'tenant_id')];
+
+        $siteEnabled = (bool) config('asasflow.tenancy.site_enabled', true);
+        $siteExempt = config('asasflow.tenancy.site_exempt_tables', ['sites', 'roles']);
+
+        if ($siteEnabled && !in_array($table, $siteExempt, true) && ($definition->config['site'] ?? true) !== false) {
+            $fields[] = (string) config('asasflow.tenancy.site_column', 'site_id');
+        }
+
+        return $fields;
     }
 }

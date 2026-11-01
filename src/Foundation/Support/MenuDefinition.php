@@ -263,8 +263,10 @@ class MenuDefinition
 
     public function parameterName(): string
     {
-        return Str::camel(
-            $this->modelClass()
+        return str_replace(
+            '-',
+            '_',
+            Str::singular(Str::kebab($this->name))
         );
     }
 

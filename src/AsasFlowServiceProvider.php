@@ -5,8 +5,13 @@ namespace Bitsnio\AsasFlow;
 use Bitsnio\AsasFlow\Features\Cache\CacheServiceProvider;
 use Bitsnio\AsasFlow\Features\Settings\SettingsServiceProvider;
 use Bitsnio\AsasFlow\Features\Tenancy\TenancyServiceProvider;
+use Illuminate\Contracts\Debug\ExceptionHandler;
+use Illuminate\Routing\ResponseFactory;
 use Illuminate\Support\ServiceProvider;
 use Bitsnio\AsasFlow\Foundation\Contracts\ModuleRepositoryInterface;
+use Bitsnio\AsasFlow\Foundation\Http\ApiResponseFactory;
+use Bitsnio\AsasFlow\Foundation\Http\Exceptions\ApiExceptionRenderer;
+use Bitsnio\AsasFlow\Foundation\Http\Pagination\PaginationResolver;
 use Bitsnio\AsasFlow\Foundation\Models\Permission as AsasPermissionModel;
 use Bitsnio\AsasFlow\Foundation\Models\Role as AsasRoleModel;
 use Bitsnio\AsasFlow\Foundation\Support\MenuService;
@@ -50,6 +55,15 @@ class AsasFlowServiceProvider extends ServiceProvider
         $this->app->singleton(PermissionService::class);
         $this->app->alias(PermissionService::class, 'asasflow.permission');
 
+        $this->app->singleton(PaginationResolver::class);
+        $this->app->singleton(ApiResponseFactory::class);
+        $this->app->alias(ApiResponseFactory::class, 'asasflow.response');
+        $this->app->singleton(ApiExceptionRenderer::class);
+
+        $this->app->afterResolving(ExceptionHandler::class, function (ExceptionHandler $handler, $app): void {
+            $app->make(ApiExceptionRenderer::class)->register($handler);
+        });
+
          // Register tenancy if enabled
         if (config('asasflow.tenancy.enabled', false)) {
             $this->app->register(TenancyServiceProvider::class);
@@ -66,6 +80,13 @@ class AsasFlowServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        $this->registerResponseMacros();
+
+        if ($this->app->resolved(ExceptionHandler::class)) {
+            $this->app->make(ApiExceptionRenderer::class)->register(
+                $this->app->make(ExceptionHandler::class)
+            );
+        }
 
         // Register module entry-point providers through the new mechanism.
         $this->app->make(ModuleRegistrar::class)->register();
@@ -139,5 +160,68 @@ class AsasFlowServiceProvider extends ServiceProvider
 
         $class = "Modules\\{$module}\\Models\\{$modelName}";
         return class_exists($class) ? $class : null;
+    }
+
+    protected function registerResponseMacros(): void
+    {
+        ResponseFactory::macro('success', function (
+            mixed $data = null,
+            string $message = 'Success',
+            int $status = 200,
+            array $headers = [],
+            array $meta = [],
+        ) {
+            return app(ApiResponseFactory::class)->success(
+                $data,
+                $message,
+                $status,
+                $headers,
+                $meta,
+            );
+        });
+
+        ResponseFactory::macro('created', function (
+            mixed $data = null,
+            string $message = 'Created successfully',
+            array $headers = [],
+            array $meta = [],
+        ) {
+            return app(ApiResponseFactory::class)->created(
+                $data,
+                $message,
+                $headers,
+                $meta,
+            );
+        });
+
+        ResponseFactory::macro('paginated', function (
+            mixed $items,
+            string $message = 'Success',
+            int $status = 200,
+            array $headers = [],
+            array $meta = [],
+        ) {
+            return app(ApiResponseFactory::class)->paginated(
+                $items,
+                $message,
+                $status,
+                $headers,
+                $meta,
+            );
+        });
+
+        ResponseFactory::macro('error', function (
+            string $message = 'Error',
+            int $status = 400,
+            mixed $errors = null,
+            array $headers = [],
+        ) {
+            return app(ApiResponseFactory::class)->error(
+                $message,
+                $status,
+                $errors,
+                $headers,
+            );
+        });
     }
 }

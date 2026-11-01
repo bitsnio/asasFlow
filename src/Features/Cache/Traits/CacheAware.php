@@ -8,7 +8,17 @@ trait CacheAware
 {
     public static function bootCacheAware(): void
     {
-        static::observe(ModelCacheObserver::class);
+        static::created(ModelCacheObserver::class . '@created');
+        static::updated(ModelCacheObserver::class . '@updated');
+        static::deleted(ModelCacheObserver::class . '@deleted');
+
+        if (method_exists(static::class, 'restored')) {
+            static::restored(ModelCacheObserver::class . '@restored');
+        }
+
+        if (method_exists(static::class, 'forceDeleted')) {
+            static::forceDeleted(ModelCacheObserver::class . '@forceDeleted');
+        }
     }
 
     public function getCacheTags(): array

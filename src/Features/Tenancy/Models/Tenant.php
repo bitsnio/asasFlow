@@ -4,9 +4,12 @@ namespace Bitsnio\AsasFlow\Features\Tenancy\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Tenant extends Model
 {
+    use SoftDeletes;
+
     protected $table = 'asasflow_tenants';
     
     protected $fillable = [

@@ -172,10 +172,12 @@ final class ModuleDependencyResolver
         $version = config('asasflow.version');
 
         if (! is_string($version) || trim($version) === '') {
-            throw new LogicException(
-                'Cannot validate module compatibility because '
-                    . '[asasflow.version] is not configured.'
-            );
+            $version = env('ASASFLOW_VERSION', '1.0.0');
+        }
+
+        // Development branches (dev-main, dev-master, etc.) bypass strict semver checks.
+        if (is_string($version) && str_starts_with($version, 'dev-')) {
+            return;
         }
 
         if (! Semver::satisfies(ltrim($version, 'v'), $constraint)) {

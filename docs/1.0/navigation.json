@@ -1,0 +1,35 @@
+{
+  "$schema": "https://larecipe.saleem.dev/schemas/3.x/navigation.json",
+  "groups": [
+    "index",
+    "overview",
+    "installation",
+    {
+      "group": "Features",
+      "pages": [
+        "features/cache",
+        "features/settings"
+      ]
+    },
+    {
+      "group": "Getting started",
+      "pages": [
+        "getting_started/updated_Generator_guide",
+        "getting_started/create_module",
+        "getting_started/menu_and_Generators",
+        "getting_started/create_menu",
+        "getting_started/controller_and_routes",
+        "getting_started/seeders_and_factories",
+        "getting_started/permissions"
+      ]
+    },
+    {
+      "group": "How to use",
+      "pages": [
+        "how_to_use/filters_and_pagination",
+        "how_to_use/dropdowns",
+        "how_to_use/responses_and_pagination"
+      ]
+    }
+  ]
+}

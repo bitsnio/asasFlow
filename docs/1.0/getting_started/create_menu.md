@@ -1,4 +1,4 @@
-# `MakeMenuCommand` Documentation
+# Make Menu
 
 This command helps manage module menus by allowing developers to **add sub-modules** and **actions** dynamically through the CLI.
 

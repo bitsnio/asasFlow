@@ -54,6 +54,8 @@ class ModelCacheObserver
         $modelId = $model->getKey();
 
         $tags = $this->getModelCacheTags($model);
+        $tags[] = 'dropdown:' . $model->getTable();
+        $tags = array_values(array_unique(array_filter($tags)));
 
         $this->invalidator->invalidate($modelClass, $modelId !== null ? (string) $modelId : null);
 

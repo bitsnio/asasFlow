@@ -2,6 +2,9 @@
 
 namespace Bitsnio\AsasFlow\Console;
 
+use Bitsnio\AsasFlow\Console\Commands\Database\MakeFactoryCommand;
+use Bitsnio\AsasFlow\Console\Commands\Database\MakeSeederCommand;
+use Bitsnio\AsasFlow\Console\Commands\Database\SeedCommand;
 use Bitsnio\AsasFlow\Console\Commands\Module\MakeModuleCommand;
 use Illuminate\Support\Collection;
 use Bitsnio\AsasFlow\Console\Commands\Install;
@@ -24,6 +27,10 @@ class ConsoleServiceProvider
             GenerateFromSchemaCommand::class,
             // Module overrides
             MakeModuleCommand::class,
+            // Database
+            MakeSeederCommand::class,
+            MakeFactoryCommand::class,
+            SeedCommand::class,
         ]);
     }
 

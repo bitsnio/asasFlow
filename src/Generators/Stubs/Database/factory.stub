@@ -1,0 +1,33 @@
+<?php
+
+declare(strict_types=1);
+
+namespace {{ NAMESPACE }};
+
+use Illuminate\Database\Eloquent\Factories\Factory;
+{{ MODEL_IMPORT }}
+
+/**
+ * @extends \Illuminate\Database\Eloquent\Factories\Factory<\{{ MODEL_FQCN }}>
+ */
+class {{ CLASS }} extends Factory
+{
+    /**
+     * The name of the factory's corresponding model.
+     *
+     * @var class-string<\Illuminate\Database\Eloquent\Model>
+     */
+    protected $model = {{ MODEL_CLASS }}::class;
+
+    /**
+     * Define the model's default state.
+     *
+     * @return array<string, mixed>
+     */
+    public function definition(): array
+    {
+        return [
+            //
+        ];
+    }
+}

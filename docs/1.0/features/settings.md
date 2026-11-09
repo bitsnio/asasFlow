@@ -1,4 +1,4 @@
-# Module Settings Documentation
+# Module Settings
 
 ## Overview
 

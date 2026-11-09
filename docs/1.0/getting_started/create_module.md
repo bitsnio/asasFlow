@@ -1,23 +1,32 @@
-Here’s an improved, more professional and clean version of your documentation in `.md` format:
-
----
-
-# 📦 Creating New Modules
+# Creating New Modules
 
 This guide explains how to create and manage modules within our modular application framework.
 
 ---
 
-## 🚀 Module Creation Command
+## Module Creation Command
 
 Use the following Artisan command to create a new module:
 
 ```bash
-php artisan module:make [ModuleName]
+php artisan asasflow:make-module Blog
 ```
 
-> Replace `[ModuleName]` with your desired module name (e.g., `Inventory`, `Users`, `Products`).  
-> **Note:** Module names must follow PascalCase formatting.
+You can also create **multiple modules in a single command** using space-separated or comma-separated names:
+
+```bash
+# Space-separated
+php artisan asasflow:make-module Blog Shop Billing
+
+# Comma-separated
+php artisan asasflow:make-module Blog,Shop,Billing
+
+# Mixed
+php artisan asasflow:make-module Blog,Shop Inventory
+```
+
+> Module names are automatically converted to StudlyCase (e.g. `blog_posts` -> `BlogPosts`).
+> Use `--force` to regenerate starter files if a module directory already exists.
 
 ---
 
@@ -110,31 +119,26 @@ return [
 
 ## 🛠️ Module Management Commands
 
-### Enable/Disable Modules
+### Scaffolding & Generation
 
 ```bash
-# Enable a module
-php artisan module:enable YourModule
+# Generate controllers, requests, resources, and routes from menu.php
+php artisan asasflow:generate-controllers YourModule
 
-# Disable a module
-php artisan module:disable YourModule
+# Generate models, migrations, requests, and resources from JSON Schema
+php artisan asasflow:generate-from-schema YourModule
+
+# Create a database seeder for a module
+php artisan asasflow:make-seeder PostSeeder YourModule
+
+# Create an Eloquent factory for a module
+php artisan asasflow:make-factory PostFactory YourModule
+
+# Run seeders for a module (or all modules)
+php artisan asasflow:seed YourModule
 ```
 
-### Additional Commands
-
-```bash
-# List all available modules
-php artisan module:list
-
-# Create a controller inside a module
-php artisan module:make-controller ControllerName YourModule
-
-# Create a model inside a module
-php artisan module:make-model ModelName YourModule
-
-# Create a migration inside a module
-php artisan module:make-migration create_table_name YourModule
-```
+For more details on seeders and factories, refer to the [Database Seeders & Factories Guide](/{{route}}/{{version}}/getting_started/seeders_and_factories).
 
 ---
 

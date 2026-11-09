@@ -1,8 +1,4 @@
-[ASASFLOW Cache Feature - Complete Documentation](sandbox:///mnt/agents/output/ASASFLOW_CACHE_DOCUMENTATION.md)
-
----
-
-# ASASFLOW Cache Feature — Complete Documentation
+# Cache Feature
 
 ## Table of Contents
 1. [Overview](#overview)

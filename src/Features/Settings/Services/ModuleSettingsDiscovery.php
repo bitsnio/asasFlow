@@ -56,10 +56,21 @@ class ModuleSettingsDiscovery
          * admin.settings
          */
         $configKey = $module;
+        $loaded = require $settingsPath;
+
+        if (
+            is_array($loaded)
+            && array_key_exists('settings', $loaded)
+            && is_array($loaded['settings'])
+            && !array_key_exists('default', $loaded['settings'])
+            && !array_key_exists('scope', $loaded['settings'])
+        ) {
+            $loaded = $loaded['settings'];
+        }
 
         config()->set(
             $configKey . '.settings',
-            require $settingsPath
+            is_array($loaded) ? $loaded : []
         );
 
         $this->registry->register(
@@ -70,9 +81,12 @@ class ModuleSettingsDiscovery
 
     protected function getModulesPath(): string
     {
-        return config(
-            'modules.paths.modules',
-            base_path('Modules')
+        return (string) config(
+            'asasflow.modules.path',
+            config(
+                'modules.paths.modules',
+                base_path('Modules')
+            )
         );
     }
 
@@ -81,8 +95,24 @@ class ModuleSettingsDiscovery
      */
     public function settings(string $module): array
     {
+        if (! $this->registry->has($module)) {
+            $this->discover();
+        }
+
         $configKey = $this->registry->configKey($module);
 
-        return config($configKey . '.settings', []);
+        $settings = config($configKey . '.settings', []);
+
+        if (
+            is_array($settings)
+            && array_key_exists('settings', $settings)
+            && is_array($settings['settings'])
+            && !array_key_exists('default', $settings['settings'])
+            && !array_key_exists('scope', $settings['settings'])
+        ) {
+            return $settings['settings'];
+        }
+
+        return is_array($settings) ? $settings : [];
     }
 }

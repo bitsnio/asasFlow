@@ -1,4 +1,4 @@
-# 📜 **PermissionService Documentation**
+# Roles & Permissions
 
 ## Overview
 `PermissionService` is responsible for dynamically creating roles and managing permissions for users based on menu structure, using the `spatie/laravel-permission` package.

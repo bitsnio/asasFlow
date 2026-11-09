@@ -1,4 +1,4 @@
-# Laravel FilterScope Documentation
+# FilterScope and Pagination
 
 ## Overview
 

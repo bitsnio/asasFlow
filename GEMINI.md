@@ -29,7 +29,10 @@ AsasFlow is a Laravel package (`Bitsnio\AsasFlow\`) for building modular API app
   - `Tenancy/`: Single-DB (`tenant_id` / `site_id` columns) and multi-DB tenant resolution, middleware, traits, and models.
 - `src/Console/`: Artisan commands registered via `ConsoleServiceProvider`:
   - `asasflow:install` — Install and configure AsasFlow in host application
-  - `asasflow:make-module` — Scaffold a new module based on `config/asasflow.php`
+  - `asasflow:make-module` — Scaffold one or more modules based on `config/asasflow.php`
+  - `asasflow:make-seeder` — Scaffold a new database seeder for a module
+  - `asasflow:make-factory` — Scaffold a new Eloquent model factory for a module
+  - `asasflow:seed` — Run database seeders for a specified module or all enabled modules
   - `asasflow:generate-controllers` — Generate controllers, requests, resources, and routes from a module's `config/menu.php`
   - `asasflow:generate-from-schema` — Generate models, migrations, requests, and resources from JSON Schema definitions
   - `asasflow:module-install` — Install required modules

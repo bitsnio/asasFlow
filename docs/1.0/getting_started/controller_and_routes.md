@@ -1,4 +1,4 @@
-# ⚡ `module:make-menu_controllers` Command
+# Generate Controllers
 
 This command **automatically generates** API controllers and optimized route files (`api.php`) for a module based on its `menu.php` configuration.
 

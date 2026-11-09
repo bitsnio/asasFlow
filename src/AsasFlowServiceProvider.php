@@ -10,6 +10,7 @@ use Illuminate\Routing\ResponseFactory;
 use Illuminate\Support\ServiceProvider;
 use Bitsnio\AsasFlow\Foundation\Contracts\ModuleRepositoryInterface;
 use Bitsnio\AsasFlow\Foundation\Http\ApiResponseFactory;
+use Bitsnio\AsasFlow\Foundation\Http\Dropdown\DropdownService;
 use Bitsnio\AsasFlow\Foundation\Http\Exceptions\ApiExceptionRenderer;
 use Bitsnio\AsasFlow\Foundation\Http\Pagination\PaginationResolver;
 use Bitsnio\AsasFlow\Foundation\Models\Permission as AsasPermissionModel;
@@ -58,6 +59,8 @@ class AsasFlowServiceProvider extends ServiceProvider
         $this->app->singleton(PaginationResolver::class);
         $this->app->singleton(ApiResponseFactory::class);
         $this->app->alias(ApiResponseFactory::class, 'asasflow.response');
+        $this->app->singleton(DropdownService::class);
+        $this->app->alias(DropdownService::class, 'asasflow.dropdown');
         $this->app->singleton(ApiExceptionRenderer::class);
 
         $this->app->afterResolving(ExceptionHandler::class, function (ExceptionHandler $handler, $app): void {

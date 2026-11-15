@@ -15,6 +15,8 @@ use Bitsnio\AsasFlow\Foundation\Support\SchemaDefinition;
 use Bitsnio\AsasFlow\Foundation\Support\StubRenderer;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Throwable;
 
@@ -106,6 +108,7 @@ class ControllerGenerator implements GeneratorInterface, SchemaArtifactGenerator
         bool $force = false,
         ?SchemaDefinition $schema = null,
     ): array {
+        $schema ??= $this->resolveSchema($module, $definition);
         $relative = $definition->controllerRelativePath();
         $path = $this->files->getControllerPath($module, $relative);
         $exists = $this->files->exists($path);
@@ -114,7 +117,7 @@ class ControllerGenerator implements GeneratorInterface, SchemaArtifactGenerator
         if (!$exists || $force) {
             $this->files->writeFile(
                 $path,
-                $this->content($module, $definition, $useModel),
+                $this->content($module, $definition, $useModel, $schema),
                 true,
             );
 
@@ -140,7 +143,7 @@ class ControllerGenerator implements GeneratorInterface, SchemaArtifactGenerator
 
         [$updatedDocument, $addedMethods] = $this->actionSynchronizer->sync(
             $document,
-            $this->methodMap($definition, $useModel),
+            $this->methodMap($definition, $useModel, $schema),
         );
 
         if (!empty($addedMethods) || $modelImportRemoved) {
@@ -164,7 +167,7 @@ class ControllerGenerator implements GeneratorInterface, SchemaArtifactGenerator
             $this->files->updateGeneratedBlock(
                 $path,
                 'methods',
-                $this->methods($definition, $useModel),
+                $this->methods($definition, $useModel, $schema),
             );
 
             return [
@@ -177,6 +180,21 @@ class ControllerGenerator implements GeneratorInterface, SchemaArtifactGenerator
             'action' => 'skipped',
             'path' => $path,
         ];
+    }
+
+    protected function resolveSchema($module, MenuDefinition $definition): ?SchemaDefinition
+    {
+        $schemaPath = $module->getPath() . '/schema/' . $definition->schemaName() . '.json';
+
+        if (!is_file($schemaPath)) {
+            return null;
+        }
+
+        try {
+            return SchemaDefinition::fromFile($schemaPath);
+        } catch (Throwable) {
+            return null;
+        }
     }
 
     /**
@@ -220,16 +238,17 @@ class ControllerGenerator implements GeneratorInterface, SchemaArtifactGenerator
         $module,
         MenuDefinition $definition,
         bool $useModel = true,
+        ?SchemaDefinition $schema = null,
     ): string {
         return $this->stubs->renderFile(
             'controller.stub',
             [
                 'NAMESPACE' => $this->support->controllerNamespace($module, $definition),
                 'CLASS' => $definition->controllerClass,
-                'IMPORTS' => $this->imports($module, $definition, $useModel),
+                'IMPORTS' => $this->imports($module, $definition, $useModel, $schema),
                 'TRAIT_IMPORTS' => $this->support->traitImports('controller', [JsonResponseTrait::class]),
                 'TRAITS' => $this->support->traitUsage('controller', [JsonResponseTrait::class]),
-                'METHODS' => $this->methods($definition, $useModel),
+                'METHODS' => $this->methods($definition, $useModel, $schema),
             ],
         );
     }
@@ -238,6 +257,7 @@ class ControllerGenerator implements GeneratorInterface, SchemaArtifactGenerator
         $module,
         MenuDefinition $definition,
         bool $useModel = true,
+        ?SchemaDefinition $schema = null,
     ): string {
         $imports = [
             JsonResponse::class,
@@ -266,19 +286,30 @@ class ControllerGenerator implements GeneratorInterface, SchemaArtifactGenerator
             $imports[] = Request::class;
         }
 
+        if ($useModel && $schema !== null && $schema->relationNames() !== []) {
+            $imports[] = Arr::class;
+            $imports[] = DB::class;
+        }
+
         return $this->support->generatorImports('controller', $imports);
     }
 
-    protected function methodMap(MenuDefinition $definition, bool $useModel = true): array
-    {
+    protected function methodMap(
+        MenuDefinition $definition,
+        bool $useModel = true,
+        ?SchemaDefinition $schema = null,
+    ): array {
         $map = [];
+        $relations = ($useModel && $schema !== null)
+            ? $schema->relations($definition->tableName(), $definition->modelClass())
+            : [];
 
         foreach ($definition->routeActions() as $action) {
             $code = match ($action) {
-                'index' => $this->indexMethod($definition, $useModel),
-                'store' => $this->storeMethod($definition, $useModel),
-                'show' => $this->showMethod($definition, $useModel),
-                'update' => $this->updateMethod($definition, $useModel),
+                'index' => $this->indexMethod($definition, $useModel, $relations),
+                'store' => $this->storeMethod($definition, $useModel, $relations),
+                'show' => $this->showMethod($definition, $useModel, $relations),
+                'update' => $this->updateMethod($definition, $useModel, $relations),
                 'destroy' => $this->destroyMethod($definition, $useModel),
                 default => '',
             };
@@ -296,11 +327,14 @@ class ControllerGenerator implements GeneratorInterface, SchemaArtifactGenerator
         return $map;
     }
 
-    protected function methods(MenuDefinition $definition, bool $useModel = true): string
-    {
+    protected function methods(
+        MenuDefinition $definition,
+        bool $useModel = true,
+        ?SchemaDefinition $schema = null,
+    ): string {
         return implode(
             PHP_EOL . PHP_EOL,
-            array_values($this->methodMap($definition, $useModel)),
+            array_values($this->methodMap($definition, $useModel, $schema)),
         );
     }
 
@@ -318,8 +352,14 @@ class ControllerGenerator implements GeneratorInterface, SchemaArtifactGenerator
         PHP;
     }
 
-    protected function indexMethod(MenuDefinition $definition, bool $useModel = true): string
-    {
+    /**
+     * @param  array<string, array<string, mixed>>  $relations
+     */
+    protected function indexMethod(
+        MenuDefinition $definition,
+        bool $useModel = true,
+        array $relations = [],
+    ): string {
         if (!$useModel) {
             return <<<'PHP'
                 public function index(): JsonResponse
@@ -344,10 +384,13 @@ class ControllerGenerator implements GeneratorInterface, SchemaArtifactGenerator
 
         $perPage = $perPage ?: 15;
         $modelClass = $definition->modelClass();
+        $queryExpr = $relations !== []
+            ? "{$modelClass}::query()->with(" . $this->exportRelationMethods($relations) . ')'
+            : "{$modelClass}::query()";
 
         $fetchExpression = $paginationEnabled
-            ? "\$this->paginateQuery({$modelClass}::query(), {$perPage})"
-            : "{$modelClass}::query()->get()";
+            ? "\$this->paginateQuery({$queryExpr}, {$perPage})"
+            : "{$queryExpr}->get()";
 
         $payload = $definition->hasResource()
             ? "{$definition->resourceClass}::collection(\$items)"
@@ -365,8 +408,14 @@ class ControllerGenerator implements GeneratorInterface, SchemaArtifactGenerator
         PHP;
     }
 
-    protected function storeMethod(MenuDefinition $definition, bool $useModel = true): string
-    {
+    /**
+     * @param  array<string, array<string, mixed>>  $relations
+     */
+    protected function storeMethod(
+        MenuDefinition $definition,
+        bool $useModel = true,
+        array $relations = [],
+    ): string {
         if (!$useModel) {
             return <<<PHP
                 public function store(
@@ -383,13 +432,55 @@ class ControllerGenerator implements GeneratorInterface, SchemaArtifactGenerator
             ? "new {$definition->resourceClass}(\$item)"
             : '$item';
 
+        if ($relations === []) {
+            return <<<PHP
+                public function store(
+                    {$definition->requestClass()} \$request
+                ): JsonResponse {
+                    \$item = {$definition->modelClass()}::create(
+                        \$request->validated()
+                    );
+
+                    return \$this->createdResponse(
+                        {$payload}
+                    );
+                }
+            PHP;
+        }
+
+        $pullLines = [];
+        $syncLines = [];
+        foreach ($relations as $relation) {
+            $prop = (string) $relation['property'];
+            $method = (string) $relation['method'];
+            $var = '$' . Str::camel($prop);
+            $default = ($relation['type'] ?? 'hasMany') === 'hasMany' ? '[]' : 'null';
+            $pullLines[] = "            {$var} = Arr::pull(\$data, " . var_export($prop, true) . ", {$default});";
+
+            if (($relation['type'] ?? 'hasMany') === 'hasMany') {
+                $syncLines[] = "            if (!empty({$var})) {\n                \$item->{$method}()->createMany({$var});\n            }";
+            } else {
+                $syncLines[] = "            if (is_array({$var}) && {$var} !== []) {\n                \$item->{$method}()->create({$var});\n            }";
+            }
+        }
+
+        $pullBlock = implode(PHP_EOL, $pullLines);
+        $syncBlock = implode(PHP_EOL, $syncLines);
+        $withList = $this->exportRelationMethods($relations);
+
         return <<<PHP
             public function store(
                 {$definition->requestClass()} \$request
             ): JsonResponse {
-                \$item = {$definition->modelClass()}::create(
-                    \$request->validated()
-                );
+                \$item = DB::transaction(function () use (\$request) {
+                    \$data = \$request->validated();
+        {$pullBlock}
+
+                    \$item = {$definition->modelClass()}::create(\$data);
+        {$syncBlock}
+
+                    return \$item->load({$withList});
+                });
 
                 return \$this->createdResponse(
                     {$payload}
@@ -398,8 +489,14 @@ class ControllerGenerator implements GeneratorInterface, SchemaArtifactGenerator
         PHP;
     }
 
-    protected function showMethod(MenuDefinition $definition, bool $useModel = true): string
-    {
+    /**
+     * @param  array<string, array<string, mixed>>  $relations
+     */
+    protected function showMethod(
+        MenuDefinition $definition,
+        bool $useModel = true,
+        array $relations = [],
+    ): string {
         $parameter = $definition->parameterName();
 
         if (!$useModel) {
@@ -418,10 +515,26 @@ class ControllerGenerator implements GeneratorInterface, SchemaArtifactGenerator
             ? "new {$definition->resourceClass}(\${$parameter})"
             : "\${$parameter}";
 
+        if ($relations === []) {
+            return <<<PHP
+                public function show(
+                    {$definition->modelClass()} \${$parameter}
+                ): JsonResponse {
+                    return \$this->successResponse(
+                        {$payload}
+                    );
+                }
+            PHP;
+        }
+
+        $withList = $this->exportRelationMethods($relations);
+
         return <<<PHP
             public function show(
                 {$definition->modelClass()} \${$parameter}
             ): JsonResponse {
+                \${$parameter}->load({$withList});
+
                 return \$this->successResponse(
                     {$payload}
                 );
@@ -429,8 +542,14 @@ class ControllerGenerator implements GeneratorInterface, SchemaArtifactGenerator
         PHP;
     }
 
-    protected function updateMethod(MenuDefinition $definition, bool $useModel = true): string
-    {
+    /**
+     * @param  array<string, array<string, mixed>>  $relations
+     */
+    protected function updateMethod(
+        MenuDefinition $definition,
+        bool $useModel = true,
+        array $relations = [],
+    ): string {
         $parameter = $definition->parameterName();
 
         if (!$useModel) {
@@ -450,20 +569,80 @@ class ControllerGenerator implements GeneratorInterface, SchemaArtifactGenerator
             ? "new {$definition->resourceClass}(\${$parameter})"
             : "\${$parameter}";
 
+        if ($relations === []) {
+            return <<<PHP
+                public function update(
+                    {$definition->requestClass()} \$request,
+                    {$definition->modelClass()} \${$parameter}
+                ): JsonResponse {
+                    \${$parameter}->update(
+                        \$request->validated()
+                    );
+
+                    return \$this->successResponse(
+                        {$payload}
+                    );
+                }
+            PHP;
+        }
+
+        $pullLines = [];
+        $syncLines = [];
+        foreach ($relations as $relation) {
+            $prop = (string) $relation['property'];
+            $method = (string) $relation['method'];
+            $hasVar = '$has' . Str::studly($prop);
+            $var = '$' . Str::camel($prop);
+            $quotedProp = var_export($prop, true);
+            $default = ($relation['type'] ?? 'hasMany') === 'hasMany' ? '[]' : 'null';
+
+            $pullLines[] = "            {$hasVar} = array_key_exists({$quotedProp}, \$data);";
+            $pullLines[] = "            {$var} = Arr::pull(\$data, {$quotedProp}, {$default});";
+
+            if (($relation['type'] ?? 'hasMany') === 'hasMany') {
+                $syncLines[] = "            if ({$hasVar} && is_array({$var})) {\n                \${$parameter}->{$method}()->delete();\n                if ({$var} !== []) {\n                    \${$parameter}->{$method}()->createMany({$var});\n                }\n            }";
+            } else {
+                $syncLines[] = "            if ({$hasVar}) {\n                \${$parameter}->{$method}()->delete();\n                if (is_array({$var}) && {$var} !== []) {\n                    \${$parameter}->{$method}()->create({$var});\n                }\n            }";
+            }
+        }
+
+        $pullBlock = implode(PHP_EOL, $pullLines);
+        $syncBlock = implode(PHP_EOL, $syncLines);
+        $withList = $this->exportRelationMethods($relations);
+
         return <<<PHP
             public function update(
                 {$definition->requestClass()} \$request,
                 {$definition->modelClass()} \${$parameter}
             ): JsonResponse {
-                \${$parameter}->update(
-                    \$request->validated()
-                );
+                DB::transaction(function () use (\$request, \${$parameter}): void {
+                    \$data = \$request->validated();
+        {$pullBlock}
+
+                    \${$parameter}->update(\$data);
+        {$syncBlock}
+                });
+
+                \${$parameter}->load({$withList});
 
                 return \$this->successResponse(
                     {$payload}
                 );
             }
         PHP;
+    }
+
+    /**
+     * @param  array<string, array<string, mixed>>  $relations
+     */
+    protected function exportRelationMethods(array $relations): string
+    {
+        $methods = array_values(array_map(
+            static fn(array $rel): string => var_export((string) $rel['method'], true),
+            $relations,
+        ));
+
+        return '[' . implode(', ', $methods) . ']';
     }
 
     protected function destroyMethod(MenuDefinition $definition, bool $useModel = true): string

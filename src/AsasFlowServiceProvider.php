@@ -74,8 +74,10 @@ class AsasFlowServiceProvider extends ServiceProvider
 
 
         $this->app->booting(function () {
-            if (config('asasflow.routes.enabled') === true) {
-                $this->loadRoutesFrom(__DIR__ . '/../routes/docs.php');
+            if (config('asasflow.routes.enabled', true) === true) {
+                if (is_file(__DIR__ . '/../routes/docs.php') && class_exists(\BinaryTorch\LaRecipe\LaRecipe::class)) {
+                    $this->loadRoutesFrom(__DIR__ . '/../routes/docs.php');
+                }
                 $this->loadRoutesFrom(__DIR__ . '/routes/api.php');
             }
         });

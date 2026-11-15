@@ -111,5 +111,49 @@ You will get:
 
 ---
 
+## 🔗 Schema-Driven Generation & Relational Child Tables (`"relation": true`)
+
+After generating controllers and routes from `menu.php`, generate models, migrations, form requests, and resources from your JSON Schemas (`Modules/{Module}/schema/*.json`):
+
+```bash
+php artisan asasflow:generate-from-schema {module}
+```
+
+### JSON Column vs. Relational Table for `array` / `object` Properties
+
+By default, any property of `"type": "array"` or `"type": "object"` is generated as a `json` / `jsonb` column on the parent table and cast to `'array'` on the parent model.
+
+When an `array` (or `object`) property represents a **child relational table** submitted within the same form payload (for example, `services` inside `VendorContracts.json`), add `"relation": true` to the property:
+
+```json
+"services": {
+    "type": "array",
+    "relation": true,
+    "title": "Locked Service Rates",
+    "minItems": 1,
+    "items": {
+        "type": "object",
+        "required": ["service_id", "service_area_id", "purchase_rate", "selling_rate"],
+        "properties": {
+            "service_id": { "type": "integer" },
+            "service_area_id": { "type": "integer" },
+            "purchase_rate": { "type": "number", "default": 0 },
+            "selling_rate": { "type": "number", "default": 0 },
+            "is_locked": { "type": "boolean", "default": true },
+            "is_active": { "type": "boolean", "default": true }
+        }
+    }
+}
+```
+
+When `"relation": true` is present, AsasFlow automatically derives all naming by convention (no database/model names needed in the schema):
+- **Parent Migration (`vendor_contracts`)**: Excludes the `services` JSON column.
+- **Child Migration (`vendor_contract_services`)**: Generated automatically with `$table->foreignId('vendor_contract_id')->constrained('vendor_contracts')->cascadeOnDelete();` and all `items.properties` columns.
+- **Parent Model (`VendorContracts`)**: Generates `public function services(): HasMany`.
+- **Child Model (`VendorContractServices`)**: Generated automatically with `$fillable`, `$casts`, and `public function vendorContract(): BelongsTo`.
+- **Controller (`VendorContractsController`)**: Wraps `store()` and `update()` in `DB::transaction()` to save the parent and sync child records, and eager-loads `with(['services'])` in `index()` and `show()`.
+
+---
+
 > ✅ **Best Practice:** Always commit your `menu.php` changes and regenerate controllers/routes before pushing code.
 

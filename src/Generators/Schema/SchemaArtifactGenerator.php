@@ -123,12 +123,21 @@ class SchemaArtifactGenerator
 
                         continue;
                     }
-                    $results[$key][] = $generator->syncFromSchema(
+                    $syncResult = $generator->syncFromSchema(
                         $module,
                         $definition,
                         $schema,
                         $options,
                     );
+
+                    $children = $syncResult['children'] ?? [];
+                    unset($syncResult['children']);
+
+                    $results[$key][] = $syncResult;
+
+                    foreach ($children as $childResult) {
+                        $results[$key][] = $childResult;
+                    }
                 }
             }
         }

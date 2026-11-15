@@ -45,14 +45,68 @@ class MigrationGenerator implements SchemaArtifactGeneratorInterface
 
         $table = $definition->tableName();
         $force = (bool) ($options['force'] ?? false);
+        $baseTimestamp = time();
 
+        $parentColumns = $this->resolveAllColumns($table, $definition, $schema);
+        $parentResult = $this->syncTableMigration(
+            migrationPath: $migrationPath,
+            table: $table,
+            columns: $parentColumns,
+            force: $force,
+            timestamp: $baseTimestamp,
+        );
+
+        $relations = $schema->relations($table, $definition->modelClass());
+        if ($relations === []) {
+            return $parentResult;
+        }
+
+        $children = [];
+        $offset = 1;
+
+        foreach ($relations as $relation) {
+            $childTable = $relation['table'];
+            $childColumns = $this->resolveChildColumns(
+                childTable: $childTable,
+                definition: $definition,
+                relation: $relation,
+            );
+
+            $children[] = $this->syncTableMigration(
+                migrationPath: $migrationPath,
+                table: $childTable,
+                columns: $childColumns,
+                force: $force,
+                timestamp: $baseTimestamp + $offset,
+            );
+            $offset++;
+        }
+
+        $parentResult['children'] = $children;
+
+        return $parentResult;
+    }
+
+    /**
+     * Synchronize a single table's create or alter migration from resolved column metadata.
+     *
+     * @param  array<string, array<string, mixed>>  $columns
+     * @return array{action: string, path: string}
+     */
+    protected function syncTableMigration(
+        string $migrationPath,
+        string $table,
+        array $columns,
+        bool $force,
+        int $timestamp,
+    ): array {
         $existingCreateFile = $this->findCreateMigration($migrationPath, $table);
 
         // 1. If no create migration exists yet, or --force is passed: create/overwrite the create migration
         if (!$existingCreateFile || $force) {
             $path = $existingCreateFile ?? rtrim($migrationPath, '/')
                 . '/'
-                . date('Y_m_d_His')
+                . date('Y_m_d_His', $timestamp)
                 . '_create_'
                 . $table
                 . '_table.php';
@@ -61,7 +115,7 @@ class MigrationGenerator implements SchemaArtifactGeneratorInterface
 
             $this->files->writeFile(
                 $path,
-                $this->buildCreateContent($class, $table, $definition, $schema),
+                $this->buildCreateContentFromColumns($class, $table, $columns),
                 true,
             );
 
@@ -85,35 +139,18 @@ class MigrationGenerator implements SchemaArtifactGeneratorInterface
             $this->files->updateGeneratedBlock(
                 $existingCreateFile,
                 'columns',
-                $this->buildColumns($table, $definition, $schema),
+                $this->buildColumnsFromArray($columns),
             );
 
             return [
                 'action' => 'updated-generated-columns',
                 'path' => $existingCreateFile,
             ];
-            // $class = 'Create' . Str::studly($table) . 'Table';
-            // $newContent = $this->buildCreateContent($class, $table, $definition, $schema);
-            // $currentContent = $this->files->read($existingCreateFile);
-
-            // if ($newContent === $currentContent) {
-            //     return [
-            //         'action' => 'skipped (up-to-date)',
-            //         'path' => $existingCreateFile,
-            //     ];
-            // }
-
-            // $this->files->writeFile($existingCreateFile, $newContent, true);
-
-            // return [
-            //     'action' => 'updated-unrun-migration',
-            //     'path' => $existingCreateFile,
-            // ];
         }
 
         // 3. The create migration HAS already been run!
         // Check if there are new columns in the schema that do not exist in the DB table yet.
-        $missingColumns = $this->findMissingDatabaseColumns($table, $definition, $schema);
+        $missingColumns = $this->findMissingColumnsForTable($table, $columns);
 
         if (empty($missingColumns)) {
             return [
@@ -128,7 +165,7 @@ class MigrationGenerator implements SchemaArtifactGeneratorInterface
 
         $alterPath = $pendingAlterFile ?? rtrim($migrationPath, '/')
             . '/'
-            . date('Y_m_d_His')
+            . date('Y_m_d_His', $timestamp)
             . '_add_columns_to_'
             . $table
             . '_table.php';
@@ -171,6 +208,50 @@ class MigrationGenerator implements SchemaArtifactGeneratorInterface
             }
 
             // Do not overwrite tenancy columns if they were already prepended
+            if (isset($columns[$name])) {
+                continue;
+            }
+
+            $columns[$name] = $column;
+        }
+
+        return $columns;
+    }
+
+    /**
+     * Resolve columns for a child relation table (tenancy + parent foreign key + child schema columns).
+     *
+     * @param  array<string, mixed>  $relation
+     * @return array<string, array<string, mixed>>
+     */
+    protected function resolveChildColumns(
+        string $childTable,
+        MenuDefinition $definition,
+        array $relation,
+    ): array {
+        $columns = [];
+
+        foreach ($this->tenancyColumns($childTable, $definition) as $name => $meta) {
+            $columns[$name] = $meta;
+        }
+
+        $foreignKey = (string) $relation['foreign_key'];
+        $columns[$foreignKey] = [
+            'name' => $foreignKey,
+            'type' => 'foreignId',
+            'constrained' => (string) $relation['parent_table'],
+            'on_delete' => 'cascade',
+            'nullable' => false,
+        ];
+
+        /** @var SchemaDefinition $childSchema */
+        $childSchema = $relation['schema'];
+
+        foreach ($childSchema->migrationColumns() as $name => $column) {
+            if (in_array($name, self::IGNORED_COLUMNS, true)) {
+                continue;
+            }
+
             if (isset($columns[$name])) {
                 continue;
             }
@@ -278,6 +359,15 @@ class MigrationGenerator implements SchemaArtifactGeneratorInterface
     ): array {
         $allColumns = $this->resolveAllColumns($table, $definition, $schema);
 
+        return $this->findMissingColumnsForTable($table, $allColumns);
+    }
+
+    /**
+     * @param  array<string, array<string, mixed>>  $allColumns
+     * @return array<string, array<string, mixed>>
+     */
+    protected function findMissingColumnsForTable(string $table, array $allColumns): array
+    {
         try {
             if (!Schema::hasTable($table)) {
                 return [];
@@ -361,37 +451,29 @@ class MigrationGenerator implements SchemaArtifactGeneratorInterface
         MenuDefinition $definition,
         SchemaDefinition $schema,
     ): string {
+        return $this->buildCreateContentFromColumns(
+            $class,
+            $table,
+            $this->resolveAllColumns($table, $definition, $schema),
+        );
+    }
 
+    /**
+     * @param  array<string, array<string, mixed>>  $columns
+     */
+    protected function buildCreateContentFromColumns(
+        string $class,
+        string $table,
+        array $columns,
+    ): string {
         return $this->stubs->renderFile(
             'create-migration.stub',
             [
                 'class' => $class,
                 'table' => $table,
-                'columns' => $this->buildColumns(
-                    $table,
-                    $definition,
-                    $schema,
-                ),
+                'columns' => $this->buildColumnsFromArray($columns),
             ],
         );
-        // $lines = [];
-
-        // foreach ($this->resolveAllColumns($table, $definition, $schema) as $column) {
-        //     $line = $this->column($column);
-
-        //     if ($line !== '') {
-        //         $lines[] = '            ' . $line;
-        //     }
-        // }
-
-        // return $this->stubs->renderFile(
-        //     'create-migration.stub',
-        //     [
-        //         'class' => $class,
-        //         'table' => $table,
-        //         'columns' => implode(PHP_EOL, $lines),
-        //     ],
-        // );
     }
 
     protected function buildColumns(
@@ -399,9 +481,19 @@ class MigrationGenerator implements SchemaArtifactGeneratorInterface
         MenuDefinition $definition,
         SchemaDefinition $schema,
     ): string {
+        return $this->buildColumnsFromArray(
+            $this->resolveAllColumns($table, $definition, $schema)
+        );
+    }
+
+    /**
+     * @param  array<string, array<string, mixed>>  $columns
+     */
+    protected function buildColumnsFromArray(array $columns): string
+    {
         $lines = [];
 
-        foreach ($this->resolveAllColumns($table, $definition, $schema) as $column) {
+        foreach ($columns as $column) {
             $line = $this->column($column);
 
             if ($line !== '') {
@@ -469,6 +561,15 @@ class MigrationGenerator implements SchemaArtifactGeneratorInterface
 
         if ($column['nullable'] ?? false) {
             $line .= '->nullable()';
+        }
+
+        if (!empty($column['constrained'])) {
+            $constrainedTable = var_export((string) $column['constrained'], true);
+            $line .= "->constrained({$constrainedTable})";
+
+            if (($column['on_delete'] ?? null) === 'cascade') {
+                $line .= '->cascadeOnDelete()';
+            }
         }
 
         if (array_key_exists('default', $column) && $column['default'] !== null) {

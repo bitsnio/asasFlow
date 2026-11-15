@@ -2,6 +2,7 @@
 
 namespace Bitsnio\AsasFlow\Foundation\Support;
 
+use Illuminate\Support\Str;
 use InvalidArgumentException;
 use RuntimeException;
 
@@ -122,13 +123,17 @@ class SchemaDefinition
     }
 
     /**
-     * Eloquent casts apply to top-level database columns.
+     * Eloquent casts apply to top-level database columns (excluding relation properties).
      */
     public function casts(): array
     {
         $casts = [];
 
         foreach ($this->properties() as $name => $property) {
+            if (!is_array($property) || $this->isRelationProperty($property)) {
+                continue;
+            }
+
             $type = $this->primaryType($property);
 
             $cast = match ($type) {
@@ -154,15 +159,19 @@ class SchemaDefinition
     }
 
     /**
-     * Return top-level columns only.
+     * Return top-level columns only (excluding relation properties).
      *
-     * Nested objects and arrays become JSON columns by default.
+     * Non-relational nested objects and arrays become JSON columns by default.
      */
     public function migrationColumns(): array
     {
         $columns = [];
 
         foreach ($this->properties() as $name => $property) {
+            if (!is_array($property) || $this->isRelationProperty($property)) {
+                continue;
+            }
+
             $columns[$name] = [
                 'name' => $name,
                 'type' => $this->primaryType($property),
@@ -171,10 +180,132 @@ class SchemaDefinition
                 'default' => $property['default'] ?? null,
                 'enum' => $property['enum'] ?? null,
                 'format' => $property['format'] ?? null,
+                'maxLength' => $property['maxLength'] ?? null,
             ];
         }
 
         return $columns;
+    }
+
+    /**
+     * Return top-level properties that belong directly on the parent table/model
+     * (excluding properties marked with `"relation": true`).
+     */
+    public function fillableProperties(): array
+    {
+        $fillable = [];
+
+        foreach ($this->properties() as $name => $property) {
+            if (is_array($property) && $this->isRelationProperty($property)) {
+                continue;
+            }
+
+            $fillable[$name] = $property;
+        }
+
+        return $fillable;
+    }
+
+    /**
+     * Check whether a schema property is marked as a separate relational table/model.
+     */
+    public function isRelationProperty(array $property): bool
+    {
+        if (($property['relation'] ?? false) !== true) {
+            return false;
+        }
+
+        $type = $this->primaryType($property);
+
+        if ($type === 'array') {
+            $items = $property['items'] ?? null;
+
+            return is_array($items) && is_array($items['properties'] ?? null) && $items['properties'] !== [];
+        }
+
+        if ($type === 'object') {
+            return is_array($property['properties'] ?? null) && $property['properties'] !== [];
+        }
+
+        return false;
+    }
+
+    /**
+     * Return the relation method names defined on this schema.
+     *
+     * @return array<int, string>
+     */
+    public function relationNames(): array
+    {
+        $names = [];
+
+        foreach ($this->properties() as $name => $property) {
+            if (is_array($property) && $this->isRelationProperty($property)) {
+                $names[] = Str::camel((string) $name);
+            }
+        }
+
+        return array_values(array_unique($names));
+    }
+
+    /**
+     * Build convention-driven relation metadata for all properties marked with `"relation": true`.
+     *
+     * @return array<string, array{
+     *     property: string,
+     *     method: string,
+     *     type: string,
+     *     table: string,
+     *     model: string,
+     *     foreign_key: string,
+     *     parent_table: string,
+     *     parent_model: string,
+     *     inverse_method: string,
+     *     schema: self
+     * }>
+     */
+    public function relations(string $parentTable, string $parentModel): array
+    {
+        $relations = [];
+        $singularParentTable = Str::singular($parentTable);
+        $singularParentModel = Str::studly(Str::singular($parentModel));
+
+        foreach ($this->properties() as $name => $property) {
+            if (!is_array($property) || !$this->isRelationProperty($property)) {
+                continue;
+            }
+
+            $propertyName = (string) $name;
+            $primaryType = $this->primaryType($property);
+            $isMany = $primaryType === 'array';
+
+            $childSchemaArray = $isMany
+                ? (array) ($property['items'] ?? [])
+                : $property;
+
+            $childTableSuffix = $isMany
+                ? Str::snake(Str::plural($propertyName))
+                : Str::snake(Str::singular($propertyName));
+
+            $childModelSuffix = $isMany
+                ? Str::studly(Str::plural($propertyName))
+                : Str::studly(Str::singular($propertyName));
+
+            $relations[$propertyName] = [
+                'property' => $propertyName,
+                'method' => Str::camel($propertyName),
+                'type' => $isMany ? 'hasMany' : 'hasOne',
+                'table' => $singularParentTable . '_' . $childTableSuffix,
+                'model' => $singularParentModel . $childModelSuffix,
+                'foreign_key' => $singularParentTable . '_id',
+                'parent_table' => $parentTable,
+                'parent_model' => $parentModel,
+                'inverse_method' => Str::camel($singularParentTable),
+                'schema' => new self(['schema' => $childSchemaArray]),
+            ];
+        }
+
+        return $relations;
     }
 
     protected function buildObjectRules(

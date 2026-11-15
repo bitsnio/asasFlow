@@ -12,56 +12,76 @@ trait BelongsToTenant
 {
     public static function bootBelongsToTenant(): void
     {
-        if (!self::shouldApplySingleDbTenancy()) {
+        if (config('asasflow.tenancy.database_strategy', 'single') !== 'single') {
             return;
         }
 
         // 1. Automatically scope all SELECT/UPDATE/DELETE queries by tenant_id (and site_id if present)
-        static::addGlobalScope('asasflow_tenant', function (Builder $builder): void {
-            $model = $builder->getModel();
-            $table = $model->getTable();
+        if (self::shouldApplySingleDbTenancy()) {
+            static::addGlobalScope('asasflow_tenant', function (Builder $builder): void {
+                $model = $builder->getModel();
+                $table = $model->getTable();
+                $fillable = $model->getFillable();
 
-            if (self::isTableTenantExempt($table)) {
-                return;
-            }
+                if (self::isTableTenantExempt($table)) {
+                    return;
+                }
 
-            $tenantId = TenantContext::getTenantId();
-            $tenantCol = config('asasflow.tenancy.tenant_column', 'tenant_id');
+                $tenantId = TenantContext::getTenantId();
+                $tenantCol = (string) config('asasflow.tenancy.tenant_column', 'tenant_id');
 
-            if ($tenantId !== null) {
-                $builder->where("{$table}.{$tenantCol}", $tenantId);
-            }
+                if ($tenantId !== null && ($fillable === [] || in_array($tenantCol, $fillable, true))) {
+                    $builder->where("{$table}.{$tenantCol}", $tenantId);
+                }
 
-            if (
-                config('asasflow.tenancy.site_enabled', true)
-                && !self::isTableSiteExempt($table)
-                && TenantContext::getSiteId() !== null
-            ) {
-                $siteCol = config('asasflow.tenancy.site_column', 'site_id');
-                $builder->where("{$table}.{$siteCol}", TenantContext::getSiteId());
-            }
-        });
+                $siteCol = (string) config('asasflow.tenancy.site_column', 'site_id');
+
+                if (
+                    config('asasflow.tenancy.site_enabled', true)
+                    && !self::isTableSiteExempt($table)
+                    && ($fillable === [] || in_array($siteCol, $fillable, true))
+                    && TenantContext::getSiteId() !== null
+                ) {
+                    $builder->where("{$table}.{$siteCol}", TenantContext::getSiteId());
+                }
+            });
+        }
 
         // 2. Automatically set tenant_id and site_id when creating a new record
         static::creating(function (Model $model): void {
             $table = $model->getTable();
+            $fillable = $model->getFillable();
 
             if (self::isTableTenantExempt($table)) {
                 return;
             }
 
-            $tenantCol = config('asasflow.tenancy.tenant_column', 'tenant_id');
-            if ($model->getAttribute($tenantCol) === null && TenantContext::getTenantId() !== null) {
-                $model->setAttribute($tenantCol, TenantContext::getTenantId());
+            $tenantCol = (string) config('asasflow.tenancy.tenant_column', 'tenant_id');
+            if (
+                ($fillable === [] || in_array($tenantCol, $fillable, true))
+                && $model->getAttribute($tenantCol) === null
+            ) {
+                $tenantId = TenantContext::getTenantId()
+                    ?? (app()->bound('request') ? (request()->input($tenantCol) ?? request()->header('X-Tenant-ID')) : null)
+                    ?? (function_exists('auth') && auth()->check() ? auth()->user()?->getAttribute($tenantCol) : null)
+                    ?? 1;
+
+                $model->setAttribute($tenantCol, $tenantId);
             }
 
+            $siteCol = (string) config('asasflow.tenancy.site_column', 'site_id');
             if (
                 config('asasflow.tenancy.site_enabled', true)
                 && !self::isTableSiteExempt($table)
+                && ($fillable === [] || in_array($siteCol, $fillable, true))
+                && $model->getAttribute($siteCol) === null
             ) {
-                $siteCol = config('asasflow.tenancy.site_column', 'site_id');
-                if ($model->getAttribute($siteCol) === null && TenantContext::getSiteId() !== null) {
-                    $model->setAttribute($siteCol, TenantContext::getSiteId());
+                $siteId = TenantContext::getSiteId()
+                    ?? (app()->bound('request') ? (request()->input($siteCol) ?? request()->header('X-Site-ID')) : null)
+                    ?? (function_exists('auth') && auth()->check() ? auth()->user()?->getAttribute($siteCol) : null);
+
+                if ($siteId !== null && $siteId !== '') {
+                    $model->setAttribute($siteCol, $siteId);
                 }
             }
         });

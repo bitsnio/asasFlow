@@ -31,13 +31,72 @@ class ModelGenerator implements SchemaArtifactGeneratorInterface
         SchemaDefinition $schema,
         array $options = [],
     ): array {
+        $force = (bool) ($options['force'] ?? false);
+        $table = $definition->tableName();
+        $modelClass = $definition->modelClass();
+        $relations = $schema->relations($table, $modelClass);
+
+        $parentResult = $this->syncSingleModel(
+            module: $module,
+            modelClass: $modelClass,
+            fillableContent: $this->buildFillable($definition, $schema),
+            castsContent: $this->buildCasts($schema),
+            relationsContent: $this->buildParentRelations($relations),
+            force: $force,
+        );
+
+        if ($relations === []) {
+            return $parentResult;
+        }
+
+        $children = [];
+
+        foreach ($relations as $relation) {
+            /** @var SchemaDefinition $childSchema */
+            $childSchema = $relation['schema'];
+            $childModelClass = (string) $relation['model'];
+            $childTable = (string) $relation['table'];
+            $foreignKey = (string) $relation['foreign_key'];
+
+            $children[] = $this->syncSingleModel(
+                module: $module,
+                modelClass: $childModelClass,
+                fillableContent: $this->buildFillable(
+                    $definition,
+                    $childSchema,
+                    [$foreignKey],
+                    $childTable,
+                ),
+                castsContent: $this->buildCasts($childSchema),
+                relationsContent: $this->buildChildRelations($relation),
+                force: $force,
+            );
+        }
+
+        $parentResult['children'] = $children;
+
+        return $parentResult;
+    }
+
+    /**
+     * Synchronize or generate a single Eloquent model file.
+     *
+     * @return array{action: string, path: string}
+     */
+    protected function syncSingleModel(
+        $module,
+        string $modelClass,
+        string $fillableContent,
+        string $castsContent,
+        string $relationsContent,
+        bool $force,
+    ): array {
         $path = $this->files->getModelPath(
             $module,
-            $definition->modelClass(),
+            $modelClass,
         );
 
         $exists = $this->files->exists($path);
-        $force = (bool) ($options['force'] ?? false);
 
         if ($exists && !$force) {
             $document = $this->files->read($path);
@@ -55,14 +114,23 @@ class ModelGenerator implements SchemaArtifactGeneratorInterface
             $this->files->updateGeneratedBlock(
                 $path,
                 'generated-fillable',
-                $this->buildFillable($definition, $schema),
+                $fillableContent,
             );
 
             $this->files->updateGeneratedBlock(
                 $path,
                 'generated-casts',
-                $this->buildCasts($schema),
+                $castsContent,
             );
+
+            $updatedDoc = $this->files->read($path);
+            if (GeneratedBlock::has($updatedDoc, 'generated-relations')) {
+                $this->files->updateGeneratedBlock(
+                    $path,
+                    'generated-relations',
+                    $relationsContent,
+                );
+            }
 
             return [
                 'action' => 'updated',
@@ -72,7 +140,13 @@ class ModelGenerator implements SchemaArtifactGeneratorInterface
 
         $this->files->writeFile(
             $path,
-            $this->generatedContent($module, $definition, $schema),
+            $this->renderModelContent(
+                $module,
+                $modelClass,
+                $fillableContent,
+                $castsContent,
+                $relationsContent,
+            ),
             true,
         );
 
@@ -87,36 +161,69 @@ class ModelGenerator implements SchemaArtifactGeneratorInterface
         MenuDefinition $definition,
         SchemaDefinition $schema,
     ): string {
+        $relations = $schema->relations($definition->tableName(), $definition->modelClass());
+
+        return $this->renderModelContent(
+            module: $module,
+            modelClass: $definition->modelClass(),
+            fillableContent: $this->buildFillable($definition, $schema),
+            castsContent: $this->buildCasts($schema),
+            relationsContent: $this->buildParentRelations($relations),
+        );
+    }
+
+    protected function renderModelContent(
+        $module,
+        string $modelClass,
+        string $fillableContent,
+        string $castsContent,
+        string $relationsContent = '',
+    ): string {
         $content = $this->stubs->renderFile(
             'model.stub',
             [
                 'NAMESPACE' => $this->support->modelNamespace($module),
-                'CLASS' => $definition->modelClass(),
+                'CLASS' => $modelClass,
             ],
         );
 
         $content = GeneratedBlock::replace(
             $content,
             'generated-fillable',
-            $this->buildFillable($definition, $schema),
+            $fillableContent,
         );
 
-        return GeneratedBlock::replace(
+        $content = GeneratedBlock::replace(
             $content,
             'generated-casts',
-            $this->buildCasts($schema),
+            $castsContent,
         );
+
+        if (GeneratedBlock::has($content, 'generated-relations')) {
+            $content = GeneratedBlock::replace(
+                $content,
+                'generated-relations',
+                $relationsContent,
+            );
+        }
+
+        return $content;
     }
 
-    // Inside ModelGenerator::syncFromSchema() and generatedContent(), pass $definition to buildFillable:
-    // $this->buildFillable($definition, $schema)
-
+    /**
+     * @param  array<int, string>  $extraFields
+     */
     protected function buildFillable(
         MenuDefinition $definition,
         SchemaDefinition $schema,
+        array $extraFields = [],
+        ?string $overrideTable = null,
     ): string {
-        $fields = array_keys($schema->properties());
-        $table = $definition->tableName();
+        $fields = array_values(array_unique([
+            ...$extraFields,
+            ...array_keys($schema->fillableProperties()),
+        ]));
+        $table = $overrideTable ?? $definition->tableName();
 
         if (
             config('asasflow.tenancy.database_strategy', 'single') === 'single'
@@ -145,13 +252,12 @@ class ModelGenerator implements SchemaArtifactGeneratorInterface
         return implode(PHP_EOL, $lines);
     }
 
-
     protected function buildCasts(SchemaDefinition $schema): string
     {
         $casts = $schema->casts();
 
         // Laravel-specific convention; does not modify the JSON Schema.
-        foreach ($schema->properties() as $field => $property) {
+        foreach ($schema->fillableProperties() as $field => $property) {
             if ($field === 'password') {
                 $casts[$field] = 'hashed';
             }
@@ -168,5 +274,58 @@ class ModelGenerator implements SchemaArtifactGeneratorInterface
         }
 
         return implode(PHP_EOL, $lines);
+    }
+
+    /**
+     * Build Eloquent relation methods (`HasMany` / `HasOne`) on the parent model.
+     *
+     * @param  array<string, array<string, mixed>>  $relations
+     */
+    protected function buildParentRelations(array $relations): string
+    {
+        if ($relations === []) {
+            return '';
+        }
+
+        $methods = [];
+
+        foreach ($relations as $relation) {
+            $method = (string) $relation['method'];
+            $childModel = (string) $relation['model'];
+            $foreignKey = var_export((string) $relation['foreign_key'], true);
+            $isMany = ($relation['type'] ?? 'hasMany') === 'hasMany';
+            $returnType = $isMany
+                ? '\Illuminate\Database\Eloquent\Relations\HasMany'
+                : '\Illuminate\Database\Eloquent\Relations\HasOne';
+            $eloquentCall = $isMany ? 'hasMany' : 'hasOne';
+
+            $methods[] = <<<PHP
+    public function {$method}(): {$returnType}
+    {
+        return \$this->{$eloquentCall}({$childModel}::class, {$foreignKey});
+    }
+PHP;
+        }
+
+        return implode(PHP_EOL . PHP_EOL, $methods);
+    }
+
+    /**
+     * Build the inverse `BelongsTo` relation method on a child model.
+     *
+     * @param  array<string, mixed>  $relation
+     */
+    protected function buildChildRelations(array $relation): string
+    {
+        $method = (string) $relation['inverse_method'];
+        $parentModel = (string) $relation['parent_model'];
+        $foreignKey = var_export((string) $relation['foreign_key'], true);
+
+        return <<<PHP
+    public function {$method}(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    {
+        return \$this->belongsTo({$parentModel}::class, {$foreignKey});
+    }
+PHP;
     }
 }

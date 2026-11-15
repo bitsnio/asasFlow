@@ -2,12 +2,13 @@
 
 namespace {{ NAMESPACE }};
 
+use Bitsnio\AsasFlow\Features\Tenancy\Traits\BelongsToTenant;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class {{ CLASS }} extends Model
 {
-    use SoftDeletes;
+    use SoftDeletes, BelongsToTenant;
 
     protected $fillable = [
         // @asasflow:generated-fillable:start
@@ -18,4 +19,7 @@ class {{ CLASS }} extends Model
         // @asasflow:generated-casts:start
         // @asasflow:generated-casts:end
     ];
+
+    // @asasflow:generated-relations:start
+    // @asasflow:generated-relations:end
 }

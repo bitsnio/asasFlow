@@ -135,7 +135,9 @@ abstract class ModuleServiceProvider extends ServiceProvider
             $routesPath = $this->modulePath($routeFile);
 
             if (is_file($routesPath)) {
-                $this->loadRoutesFrom($routesPath);
+                \Illuminate\Support\Facades\Route::middleware('api')->group(function () use ($routesPath) {
+                    $this->loadRoutesFrom($routesPath);
+                });
             }
         }
     }

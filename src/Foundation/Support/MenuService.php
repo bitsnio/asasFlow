@@ -497,7 +497,14 @@ class MenuService
                 );
             }
 
-            $record = $modelClass::findOrFail($id);
+            $query = $modelClass::query();
+            $relationNames = $schemaDef->relationNames();
+
+            if ($relationNames !== []) {
+                $query->with($relationNames);
+            }
+
+            $record = $query->findOrFail($id);
             $recordData = $record->toArray();
 
             $modelData = $this->populateModelFromRecord(

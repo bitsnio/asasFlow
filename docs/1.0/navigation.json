@@ -28,7 +28,9 @@
       "pages": [
         "how_to_use/filters_and_pagination",
         "how_to_use/dropdowns",
-        "how_to_use/responses_and_pagination"
+        "how_to_use/responses_and_pagination",
+        "how_to_use/testing_modules",
+        "how_to_use/cors"
       ]
     }
   ]

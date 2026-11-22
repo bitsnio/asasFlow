@@ -12,6 +12,7 @@ class ModuleSetting extends Model
 
     protected $fillable = [
         'module',
+        'tenant_id',
         'company_id',
         'site_id',
         'values',
@@ -21,6 +22,16 @@ class ModuleSetting extends Model
         'values' => 'array',
     ];
 
+    public function getCompanyIdAttribute(): ?int
+    {
+        return $this->attributes['tenant_id'] ?? $this->attributes['company_id'] ?? null;
+    }
+
+    public function setCompanyIdAttribute(?int $value): void
+    {
+        $this->attributes['tenant_id'] = $value;
+    }
+
     /*
     |--------------------------------------------------------------------------
     | Scope Helpers
@@ -29,16 +40,16 @@ class ModuleSetting extends Model
 
     public function isModuleLevel(): bool
     {
-        return $this->company_id === null;
+        return $this->tenant_id === null;
     }
 
     public function isCompanyLevel(): bool
     {
-        return $this->company_id !== null && $this->site_id === null;
+        return $this->tenant_id !== null && $this->site_id === null;
     }
 
     public function isSiteLevel(): bool
     {
-        return $this->company_id !== null && $this->site_id !== null;
+        return $this->tenant_id !== null && $this->site_id !== null;
     }
 }

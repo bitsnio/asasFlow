@@ -7,6 +7,7 @@ namespace Bitsnio\AsasFlow\Console\Commands\ControllerCommands;
 use Bitsnio\AsasFlow\Facades\Menu;
 use Bitsnio\AsasFlow\Foundation\Contracts\ModuleRepositoryInterface;
 use Bitsnio\AsasFlow\Foundation\Support\FileHandler;
+use Bitsnio\AsasFlow\Foundation\Support\ModuleDefinition;
 use Bitsnio\AsasFlow\Generators\Menu\MenuBuilder;
 use Bitsnio\AsasFlow\Generators\Schema\SchemaArtifactGenerator;
 use Illuminate\Console\Command;
@@ -15,7 +16,8 @@ use Throwable;
 class GenerateFromSchemaCommand extends Command
 {
     protected $signature = 'asasflow:generate-from-schema
-        {module : The module name}
+        {module?* : One or more module names (space or comma separated; omit or pass --all for all modules)}
+        {--all : Generate schema artifacts for all modules with a menu.php}
         {--schema= : Specific schema or model name to generate (optional)}
         {--only=all : Artifact to generate: all, models, migrations, requests, resources, controllers}
         {--force : Fully regenerate selected artifacts}
@@ -36,46 +38,12 @@ class GenerateFromSchemaCommand extends Command
     public function handle(): int
     {
         try {
-            $moduleName = (string) $this->argument('module');
-
-            $module = $this->moduleRepository->find($moduleName);
-
-            if (!$module) {
-                $this->error("Module [{$moduleName}] does not exist!");
-
-                return self::FAILURE;
-            }
-
-            $menuPath = $this->files->getMenuPath($module);
-
-            if (!$this->files->exists($menuPath)) {
-                $this->error("Menu configuration not found at: {$menuPath}");
-
-                return self::FAILURE;
-            }
-
-            $menu = require $menuPath;
-
-            $definitions = $this->definitionBuilder->build($menu);
-
-            if ($this->option('trace')) {
-                $this->displayTrace($definitions);
-            }
-
-            if ($this->option('dry-run')) {
-                $this->info('Dry run: schema artifacts were not generated.');
-
-                return self::SUCCESS;
-            }
-
             $only = strtolower(trim((string) $this->option('only')));
-
             if ($only === '') {
                 $only = 'all';
             }
 
             $allowed = $this->generator->allowedTypes();
-
             if (!in_array($only, $allowed, true)) {
                 $this->error(
                     'Invalid --only value. Allowed values: ' . implode(', ', $allowed),
@@ -84,31 +52,67 @@ class GenerateFromSchemaCommand extends Command
                 return self::FAILURE;
             }
 
-            $schemaOption = $this->option('schema');
+            $targetModules = $this->resolveTargetModules();
+            if ($targetModules === null) {
+                return self::FAILURE;
+            }
 
-            $results = $this->generator->generate(
-                $module,
-                $definitions,
-                [
-                    'only' => $only,
-                    'force' => (bool) $this->option('force'),
-                    'schema' => is_string($schemaOption) ? $schemaOption : null,
-                ],
-            );
-
-            if (empty($results)) {
-                $this->warn(
-                    $schemaOption
-                        ? "No matching model definition found for schema [{$schemaOption}]."
-                        : 'No model definitions found to generate.',
-                );
+            if ($targetModules === []) {
+                $this->warn('No modules found to generate schema artifacts.');
 
                 return self::SUCCESS;
             }
 
-            Menu::clearCache();
+            $schemaOption = $this->option('schema');
 
-            $this->displayResults($results);
+            foreach ($targetModules as $module) {
+                $menuPath = $this->files->getMenuPath($module);
+
+                if (!$this->files->exists($menuPath)) {
+                    $this->warn("Skipping [{$module->getName()}]: Menu configuration not found at {$menuPath}");
+
+                    continue;
+                }
+
+                $this->info("Processing module [{$module->getName()}]...");
+
+                $menu = require $menuPath;
+                $definitions = $this->definitionBuilder->build($menu);
+
+                if ($this->option('trace')) {
+                    $this->displayTrace($definitions);
+                }
+
+                if ($this->option('dry-run')) {
+                    $this->info("Dry run [{$module->getName()}]: schema artifacts were not generated.");
+
+                    continue;
+                }
+
+                $results = $this->generator->generate(
+                    $module,
+                    $definitions,
+                    [
+                        'only' => $only,
+                        'force' => (bool) $this->option('force'),
+                        'schema' => is_string($schemaOption) ? $schemaOption : null,
+                    ],
+                );
+
+                if (empty($results)) {
+                    $this->warn(
+                        $schemaOption
+                            ? "No matching model definition found for schema [{$schemaOption}] in [{$module->getName()}]."
+                            : "No model definitions found to generate in [{$module->getName()}].",
+                    );
+
+                    continue;
+                }
+
+                $this->displayResults($results);
+            }
+
+            Menu::clearCache();
 
             return self::SUCCESS;
         } catch (Throwable $e) {
@@ -120,6 +124,43 @@ class GenerateFromSchemaCommand extends Command
 
             return self::FAILURE;
         }
+    }
+
+    /**
+     * @return array<int, ModuleDefinition>|null
+     */
+    protected function resolveTargetModules(): ?array
+    {
+        $rawArgs = (array) $this->argument('module');
+        $names = [];
+
+        foreach ($rawArgs as $arg) {
+            foreach (explode(',', (string) $arg) as $part) {
+                $trimmed = trim($part);
+                if ($trimmed !== '') {
+                    $names[] = $trimmed;
+                }
+            }
+        }
+
+        $names = array_values(array_unique($names));
+
+        if ($this->option('all') || $names === [] || in_array('all', array_map('strtolower', $names), true)) {
+            return array_values($this->moduleRepository->all());
+        }
+
+        $resolved = [];
+        foreach ($names as $name) {
+            $module = $this->moduleRepository->find($name);
+            if (!$module) {
+                $this->error("Module [{$name}] does not exist!");
+
+                return null;
+            }
+            $resolved[] = $module;
+        }
+
+        return $resolved;
     }
 
     protected function displayTrace(array $definitions): void
@@ -155,6 +196,14 @@ class GenerateFromSchemaCommand extends Command
                 }
 
                 $this->line('  ' . ($item['action'] ?? 'processed') . ': ' . ($item['path'] ?? ''));
+
+                if (!empty($item['children']) && is_array($item['children'])) {
+                    foreach ($item['children'] as $childItem) {
+                        if (is_array($childItem)) {
+                            $this->line('    ↳ ' . ($childItem['action'] ?? 'processed') . ': ' . ($childItem['path'] ?? ''));
+                        }
+                    }
+                }
             }
         }
     }

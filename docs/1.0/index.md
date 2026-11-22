@@ -15,4 +15,6 @@
     - [Unified Responses & Pagination](/{{route}}/{{version}}/how_to_use/responses_and_pagination)
     - [Schema Dropdowns](/{{route}}/{{version}}/how_to_use/dropdowns)
     - [Filters And Pagination](/{{route}}/{{version}}/how_to_use/filters_and_pagination)
+    - [Host Application & Module Testing](/{{route}}/{{version}}/how_to_use/testing_modules)
+    - [Automatic CORS & Modular Config](/{{route}}/{{version}}/how_to_use/cors)
     

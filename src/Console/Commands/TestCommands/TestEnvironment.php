@@ -32,8 +32,12 @@ class TestEnvironment
 
     public function runComposer(
         array $arguments,
-        ?int $timeout = 300
+        ?int $timeout = 600
     ): Process {
+        if (!in_array('--no-interaction', $arguments, true) && !in_array('-n', $arguments, true) && ($arguments[0] ?? '') !== 'exec') {
+            $arguments[] = '--no-interaction';
+        }
+
         $process = new Process([
             $this->composerCommand(),
             ...$arguments,

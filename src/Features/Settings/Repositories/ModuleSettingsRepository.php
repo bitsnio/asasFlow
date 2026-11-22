@@ -15,7 +15,7 @@ class ModuleSettingsRepository
     ): ?ModuleSetting {
         return ModuleSetting::query()
             ->where('module', $module)
-            ->where('company_id', $companyId)
+            ->where('tenant_id', $companyId)
             ->where('site_id', $siteId)
             ->first();
     }
@@ -41,7 +41,7 @@ class ModuleSettingsRepository
         return ModuleSetting::query()->updateOrCreate(
             [
                 'module' => $module,
-                'company_id' => $companyId,
+                'tenant_id' => $companyId,
                 'site_id' => $siteId,
             ],
             [

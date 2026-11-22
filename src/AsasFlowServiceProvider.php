@@ -10,6 +10,7 @@ use Illuminate\Routing\ResponseFactory;
 use Illuminate\Support\ServiceProvider;
 use Bitsnio\AsasFlow\Foundation\Contracts\ModuleRepositoryInterface;
 use Bitsnio\AsasFlow\Foundation\Http\ApiResponseFactory;
+use Bitsnio\AsasFlow\Foundation\Http\Cors\CorsConfigurator;
 use Bitsnio\AsasFlow\Foundation\Http\Dropdown\DropdownService;
 use Bitsnio\AsasFlow\Foundation\Http\Exceptions\ApiExceptionRenderer;
 use Bitsnio\AsasFlow\Foundation\Http\Pagination\PaginationResolver;
@@ -61,6 +62,7 @@ class AsasFlowServiceProvider extends ServiceProvider
         $this->app->alias(ApiResponseFactory::class, 'asasflow.response');
         $this->app->singleton(DropdownService::class);
         $this->app->alias(DropdownService::class, 'asasflow.dropdown');
+        $this->app->singleton(CorsConfigurator::class);
         $this->app->singleton(ApiExceptionRenderer::class);
 
         $this->app->afterResolving(ExceptionHandler::class, function (ExceptionHandler $handler, $app): void {
@@ -95,6 +97,10 @@ class AsasFlowServiceProvider extends ServiceProvider
 
         // Register module entry-point providers through the new mechanism.
         $this->app->make(ModuleRegistrar::class)->register();
+
+        // Configure module-aware CORS paths and unauthenticated browser API handling.
+        $this->app->make(CorsConfigurator::class)->configure();
+
         // Boot model observers for all modules
         $this->bootModuleObservers();
 
@@ -112,6 +118,7 @@ class AsasFlowServiceProvider extends ServiceProvider
 
             $this->publishes([
                 __DIR__ . '/../config/asasflow.php' => \config_path('asasflow.php'),
+                __DIR__ . '/../config/asasflow' => \config_path('asasflow'),
             ], 'asasflow-config');
 
             $this->commands(

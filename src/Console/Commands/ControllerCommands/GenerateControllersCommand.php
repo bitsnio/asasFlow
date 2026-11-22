@@ -8,6 +8,7 @@ use Bitsnio\AsasFlow\Facades\Menu;
 use Bitsnio\AsasFlow\Foundation\Contracts\GeneratorInterface;
 use Bitsnio\AsasFlow\Foundation\Contracts\ModuleRepositoryInterface;
 use Bitsnio\AsasFlow\Foundation\Support\FileHandler;
+use Bitsnio\AsasFlow\Foundation\Support\ModuleDefinition;
 use Bitsnio\AsasFlow\Generators\Controller\ControllerGenerator;
 use Bitsnio\AsasFlow\Generators\Menu\MenuBuilder;
 use Bitsnio\AsasFlow\Generators\Request\RequestGenerator;
@@ -21,7 +22,8 @@ use Throwable;
 class GenerateControllersCommand extends Command
 {
     protected $signature = 'asasflow:generate-controllers
-        {module : The module name}
+        {module?* : One or more module names (space or comma separated; omit or pass --all for all modules)}
+        {--all : Generate artifacts for all modules with a menu.php}
         {--only=all : Artifact to generate: all, controllers, requests, resources, schemas, routes}
         {--force : Force regeneration}
         {--routes-only : Only generate routes}
@@ -72,45 +74,51 @@ class GenerateControllersCommand extends Command
     public function handle(): int
     {
         try {
-            $moduleName = (string) $this->argument('module');
-            $module = $this->moduleRepository->find($moduleName);
-
-            if (!$module) {
-                $this->error("Module [{$moduleName}] does not exist!");
-
-                return self::FAILURE;
-            }
-
-            $menuPath = $this->files->getMenuPath($module);
-
-            if (!$this->files->exists($menuPath)) {
-                $this->error("Menu configuration not found at: {$menuPath}");
-
-                return self::FAILURE;
-            }
-
-            $menu = require $menuPath;
-            $definitions = $this->definitionBuilder->build($menu);
-
-            if ($this->option('trace')) {
-                $this->displayTrace($definitions);
-            }
-
             $only = $this->resolveOnlyTarget();
             $options = [
                 'force' => (bool) $this->option('force'),
             ];
 
-            $results = $this->generate(
-                $module,
-                $definitions,
-                $only,
-                $options,
-            );
+            $targetModules = $this->resolveTargetModules();
+            if ($targetModules === null) {
+                return self::FAILURE;
+            }
+
+            if ($targetModules === []) {
+                $this->warn('No modules found to generate controllers.');
+
+                return self::SUCCESS;
+            }
+
+            foreach ($targetModules as $module) {
+                $menuPath = $this->files->getMenuPath($module);
+
+                if (!$this->files->exists($menuPath)) {
+                    $this->warn("Skipping [{$module->getName()}]: Menu configuration not found at {$menuPath}");
+
+                    continue;
+                }
+
+                $this->info("Processing module [{$module->getName()}]...");
+
+                $menu = require $menuPath;
+                $definitions = $this->definitionBuilder->build($menu);
+
+                if ($this->option('trace')) {
+                    $this->displayTrace($definitions);
+                }
+
+                $results = $this->generate(
+                    $module,
+                    $definitions,
+                    $only,
+                    $options,
+                );
+
+                $this->displayResults($results);
+            }
 
             Menu::clearCache();
-
-            $this->displayResults($results);
 
             return self::SUCCESS;
         } catch (Throwable $e) {
@@ -122,6 +130,43 @@ class GenerateControllersCommand extends Command
 
             return self::FAILURE;
         }
+    }
+
+    /**
+     * @return array<int, ModuleDefinition>|null
+     */
+    protected function resolveTargetModules(): ?array
+    {
+        $rawArgs = (array) $this->argument('module');
+        $names = [];
+
+        foreach ($rawArgs as $arg) {
+            foreach (explode(',', (string) $arg) as $part) {
+                $trimmed = trim($part);
+                if ($trimmed !== '') {
+                    $names[] = $trimmed;
+                }
+            }
+        }
+
+        $names = array_values(array_unique($names));
+
+        if ($this->option('all') || $names === [] || in_array('all', array_map('strtolower', $names), true)) {
+            return array_values($this->moduleRepository->all());
+        }
+
+        $resolved = [];
+        foreach ($names as $name) {
+            $module = $this->moduleRepository->find($name);
+            if (!$module) {
+                $this->error("Module [{$name}] does not exist!");
+
+                return null;
+            }
+            $resolved[] = $module;
+        }
+
+        return $resolved;
     }
 
     protected function resolveOnlyTarget(): string

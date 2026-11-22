@@ -64,7 +64,7 @@ beforeEach(function () {
     Schema::create('module_settings', function (Blueprint $table) {
         $table->id();
         $table->string('module');
-        $table->unsignedBigInteger('company_id')->nullable();
+        $table->unsignedBigInteger('tenant_id')->nullable();
         $table->unsignedBigInteger('site_id')->nullable();
         $table->json('values')->nullable();
         $table->timestamps();

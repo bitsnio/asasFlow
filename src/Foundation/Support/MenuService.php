@@ -485,7 +485,9 @@ class MenuService
         $schemaDef = SchemaDefinition::fromFile($schemaPath);
         $modelData = $schemaDef->modelDefaults();
 
-        if ($id !== null && $id !== '') {
+        $id = $this->normalizeSchemaRecordId($id);
+
+        if ($id !== null) {
             $usePackageModel = !$schemaDef->shouldGenerate('models')
                 || ($definition !== null && !$definition->model);
 
@@ -497,6 +499,8 @@ class MenuService
                 );
             }
 
+            /** @var \Illuminate\Database\Eloquent\Model $modelInstance */
+            $modelInstance = new $modelClass();
             $query = $modelClass::query();
             $relationNames = $schemaDef->relationNames();
 
@@ -504,7 +508,17 @@ class MenuService
                 $query->with($relationNames);
             }
 
-            $record = $query->findOrFail($id);
+            if ($modelInstance->getKeyType() === 'int' && !ctype_digit((string) $id)) {
+                if (in_array('name', $modelInstance->getFillable(), true)) {
+                    $record = $query->where('name', (string) $id)->firstOrFail();
+                } else {
+                    throw (new \Illuminate\Database\Eloquent\ModelNotFoundException())
+                        ->setModel($modelClass, [$id]);
+                }
+            } else {
+                $record = $query->findOrFail($id);
+            }
+
             $recordData = $record->toArray();
 
             $modelData = $this->populateModelFromRecord(
@@ -725,5 +739,32 @@ class MenuService
         }
 
         return trim($normalized, '/');
+    }
+
+    /**
+     * Normalize incoming schema record IDs so literal 'null', 'undefined', empty strings,
+     * or unresolved '{{variable}}' placeholders are treated as null (Create mode).
+     */
+    protected function normalizeSchemaRecordId(int|string|null $id): int|string|null
+    {
+        if ($id === null) {
+            return null;
+        }
+
+        if (is_int($id)) {
+            return $id;
+        }
+
+        $trimmed = trim($id);
+
+        if (
+            $trimmed === ''
+            || in_array(strtolower($trimmed), ['null', 'undefined', 'nan', 'false'], true)
+            || preg_match('/^\{\{.*\}\}$/', $trimmed) === 1
+        ) {
+            return null;
+        }
+
+        return ctype_digit($trimmed) ? (int) $trimmed : $trimmed;
     }
 }

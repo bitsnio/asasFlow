@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Bitsnio\AsasFlow\Foundation\Http\Exceptions;
 
 use Bitsnio\AsasFlow\Foundation\Http\ApiResponseFactory;
+use Bitsnio\AsasFlow\Foundation\Http\Cors\CorsConfigurator;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Contracts\Debug\ExceptionHandler;
@@ -44,7 +45,12 @@ class ApiExceptionRenderer
             return false;
         }
 
-        return $request->expectsJson() || $request->is('api/*');
+        if ($request->expectsJson() || $request->is('api/*')) {
+            return true;
+        }
+
+        return app()->bound(CorsConfigurator::class)
+            && app(CorsConfigurator::class)->isAsasFlowApiRequest($request);
     }
 
     public function render(Throwable $e): JsonResponse

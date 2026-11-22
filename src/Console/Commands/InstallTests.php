@@ -185,6 +185,17 @@ class InstallTests extends Command
 
     protected function pestInstalled(): bool
     {
+        return $this->pestInComposerLock() && $this->pestBinaryExists();
+    }
+
+    protected function pestBinaryExists(): bool
+    {
+        return file_exists(base_path('vendor/bin/pest'))
+            || file_exists(base_path('vendor/bin/pest.bat'));
+    }
+
+    protected function pestInComposerLock(): bool
+    {
         $composerPath = base_path('composer.lock');
 
         if (! file_exists($composerPath)) {
@@ -192,7 +203,7 @@ class InstallTests extends Command
         }
 
         $lock = json_decode(
-            file_get_contents($composerPath),
+            (string) file_get_contents($composerPath),
             true
         );
 
@@ -225,6 +236,26 @@ class InstallTests extends Command
         PestVersionResolver $versions,
         int $pestMajor
     ): void {
+        if ($this->option('dry-run')) {
+            $this->info("[Dry run] Would install Pest {$pestMajor}.");
+
+            return;
+        }
+
+        // If Pest is already locked in composer.lock but vendor/bin/pest is missing
+        // (for example, after a --no-dev install), install dev dependencies from lock file first.
+        if ($this->pestInComposerLock() && ! $this->pestBinaryExists() && ! $this->option('upgrade-pest')) {
+            $this->info('Pest is in composer.lock but vendor/bin/pest is missing. Running composer install --dev...');
+
+            $installProcess = $environment->runComposer(['install']);
+
+            if ($installProcess->isSuccessful() && $this->pestBinaryExists()) {
+                $this->info('Pest dev dependencies installed from composer.lock.');
+
+                return;
+            }
+        }
+
         $this->info(
             "Installing Pest {$pestMajor}..."
         );
@@ -237,6 +268,7 @@ class InstallTests extends Command
         $arguments = [
             'require',
             '--dev',
+            '--with-all-dependencies',
             ...$packages,
         ];
 

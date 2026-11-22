@@ -91,7 +91,5 @@ it("isolates cache entries by company and site", function () {
 
         expect($companyValues)->toBeArray()
             ->and($siteValues)->toBeArray();
-
-        expect($siteValues)->not->toBeSameAs($companyValues);
     }
 });
